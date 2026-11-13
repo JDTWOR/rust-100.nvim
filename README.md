@@ -18,6 +18,13 @@ This repository currently contains the project proposal and implementation plan.
 
 The plugin is intended to orchestrate the existing course checkout and `wr`; course content and exercise verification remain owned by their upstream projects.
 
+## Requirements
+
+- Neovim 0.10 or newer for Neovim's asynchronous `vim.system()` process API.
+- A local checkout of the course, with its Git metadata intact.
+- Git, Rust/Cargo, and the `wr` workshop runner.
+- `rust-analyzer` is recommended for Rust diagnostics and completion, but the plugin will not install or configure it.
+
 ## Upstream projects
 
 - Course: <https://github.com/mainmatter/100-exercises-to-learn-rust>

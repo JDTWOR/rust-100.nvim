@@ -13,6 +13,18 @@ El plugin debe sentirse integrado con Neovim, ser claro en terminales pequeñas 
 - Rustlings inspira la navegación, las pistas y la localización de `TODO`; aquí conviene reutilizar los marcadores de cada ejercicio y dedicar el plugin a conectar lectura, edición y verificación.
 - El material del curso está publicado bajo CC BY-NC 4.0. El flujo previsto debe trabajar sobre una copia local del repositorio oficial y conservar su atribución.
 
+### Validación técnica inicial
+
+- `wr open --chapter <capítulo> --exercise <ejercicio>` registra un ejercicio para el runner.
+- `wr check`, ejecutado desde la carpeta del ejercicio, corre solo ese ejercicio y termina con un código de salida útil para Neovim.
+- `wr` sin subcomando comprueba los ejercicios abiertos y puede preguntar si debe abrir el siguiente. `wr --keep-going` abre y prueba automáticamente los siguientes; no encaja con el avance paso a paso deseado.
+- `wr` guarda su progreso en SQLite, en `exercises/progress.db`. El esquema es un detalle interno del runner, así que el plugin no lo leerá directamente.
+- Las rutas de `book/src/SUMMARY.md` siguen el mismo capítulo y nombre base que los paquetes bajo `exercises/`; el plugin puede resolver la pareja sin copiar el contenido del curso.
+- El `.wr.toml` del curso está vacío y el runner usa `exercises` como ruta predeterminada.
+- En el entorno de desarrollo hay Neovim 0.12.6 y Rust 1.96.0. `wr` no está instalado, así que la integración de ejecución debe tratarse como no verificada hasta disponer del runner.
+
+**Decisión para la primera versión:** guardar el capítulo actual y los ejercicios aprobados por el plugin en un archivo JSON bajo el directorio de estado de Neovim. En cada verificación, registrar el ejercicio con `wr open` y ejecutar `wr check`. Así se mantiene el progreso de `wr` y la sesión de Neovim sin depender de su SQLite. Si se usa `wr` directamente fuera del plugin, la lista local puede requerir reanudación manual; sincronizar ese caso queda para una fase posterior.
+
 ## Recorrido propuesto
 
 1. `:Rust100` abre el panel del curso y detecta o solicita la ruta del checkout.
@@ -31,7 +43,7 @@ La fase técnica determinará el comando y el formato de estado fiables para con
 - Inspeccionar el checkout del curso y mapear `book/src` a `exercises`.
 - Confirmar cómo `wr` verifica, avanza y guarda el estado, incluidos sus casos de error.
 - Comprobar el soporte del workspace con `rust-analyzer` y la detección del curso desde cualquier subdirectorio.
-- Elegir la versión mínima de Neovim según las APIs asíncronas que se necesiten.
+- Fijar Neovim 0.10 como mínimo para usar `vim.system()` y ejecutar `wr` sin bloquear el editor.
 - Registrar las decisiones en notas breves de arquitectura.
 
 **Salida:** un diseño de integración comprobado y una lista cerrada de requisitos.
@@ -92,6 +104,7 @@ Este hito valida la integración principal antes de invertir tiempo en un dashbo
 
 - El usuario puede completar ejercicios de varios capítulos sin salir de Neovim.
 - Se conservan las soluciones y el progreso oficial del runner al cerrar y reabrir el editor.
+- La sesión del plugin se reanuda tras cerrar y reabrir el editor cuando el curso se recorre desde el plugin.
 - Un fallo de compilación o de pruebas muestra salida útil y permite seguir editando.
 - La ejecución no bloquea el editor.
 - Los comandos funcionan desde la raíz del curso y desde un archivo de ejercicio.
@@ -100,9 +113,9 @@ Este hito valida la integración principal antes de invertir tiempo en un dashbo
 
 ## Riesgos y decisiones abiertas
 
-1. **Estado de `wr`:** confirmar qué interfaz permite mostrar progreso con estabilidad.
+1. **Estado de `wr`:** el runner no ofrece un comando documentado para consultar progreso; la vista inicial usa estado propio del plugin.
 2. **Licencia:** decidir la licencia del código del plugin; el contenido de Mainmatter conserva su CC BY-NC 4.0.
-3. **Versión mínima de Neovim:** decidirla después del prototipo asíncrono.
+3. **Versión mínima de Neovim:** fijada en 0.10 por la API `vim.system()`.
 4. **Instalación del curso:** definir si el plugin solo detecta una copia existente o también ofrece clonar el repositorio a una ruta elegida.
 5. **Auto check:** mantenerlo opcional y desactivado inicialmente para evitar ejecuciones inesperadas.
 
