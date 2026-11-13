@@ -1,5 +1,11 @@
 # Propuesta de trabajo
 
+## Estado actual
+
+- La estructura del curso y el flujo de `wr` ya están revisados en sus repositorios oficiales.
+- El diseño de interacción está documentado en [UX.md](UX.md).
+- La base Lua implementa detección del curso, navegación, quickfix de tareas, estado local y verificación asíncrona. La verificación real de ejercicios queda pendiente porque `wr` no está instalado en el entorno de desarrollo.
+
 ## Objetivo
 
 Crear un plugin de Neovim que acompañe el curso *100 Exercises to Learn Rust* durante todo el ciclo de estudio: leer, resolver, verificar y continuar, con el menor cambio posible de contexto.

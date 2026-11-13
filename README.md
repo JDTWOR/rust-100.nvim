@@ -6,7 +6,7 @@ The goal is to keep the study loop in Neovim: read a lesson, open its exercise, 
 
 ## Project status
 
-This repository currently contains the project proposal and implementation plan. The first implementation milestone is a small end-to-end slice: open a local course lesson and exercise, run the workshop check, show its result, and continue when it passes.
+The initial Neovim workflow is in place: course dashboard, lesson and exercise navigation, TODO quickfix, and asynchronous `wr` checks. The workshop runner is not installed in the development environment, so an end-to-end exercise check has not been run here.
 
 ## Planned workflow
 
@@ -24,6 +24,41 @@ The plugin is intended to orchestrate the existing course checkout and `wr`; cou
 - A local checkout of the course, with its Git metadata intact.
 - Git, Rust/Cargo, and the `wr` workshop runner.
 - `rust-analyzer` is recommended for Rust diagnostics and completion, but the plugin will not install or configure it.
+
+Install the course and workshop runner with their upstream instructions:
+
+```sh
+git clone https://github.com/mainmatter/100-exercises-to-learn-rust
+cargo install --locked workshop-runner
+```
+
+## Setup
+
+Add the plugin to Neovim's runtime path through your plugin manager, then point it to the course checkout:
+
+```lua
+require("rust100").setup({
+  course_root = vim.fn.expand("~/src/100-exercises-to-learn-rust"),
+})
+```
+
+If `course_root` is omitted, the plugin searches upward from the current buffer and working directory. The course checkout must retain its `.git` directory because `wr` uses Git to find the repository root.
+
+## Commands
+
+| Command | Action |
+| --- | --- |
+| `:Rust100` | Open the course dashboard |
+| `:Rust100 open [index]` | Open an exercise and its lesson |
+| `:Rust100 lesson [index]` | Open a lesson |
+| `:Rust100 check` | Verify the exercise with `wr` |
+| `:Rust100 next` | Open the next exercise |
+| `:Rust100 todos` | Add `TODO` and `todo!()` markers to quickfix |
+| `:Rust100 health` | Show tool and course availability |
+
+Exercise indexes follow the order in the course's `book/src/SUMMARY.md` and start at 1. The dashboard also lets you browse with `j`/`k`, open with `Enter`, read the lesson with `l`, verify with `r`, and close with `q`.
+
+The plugin stores its dashboard cursor and checkmarks under `stdpath("state")/rust100/`. Exercises checked through the plugin also update `wr`'s official progress database. If `wr` is used directly for other exercises, the dashboard's local checkmarks do not automatically sync with that database.
 
 ## Upstream projects
 
