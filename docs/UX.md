@@ -38,12 +38,13 @@ La cantidad total se calcula desde el índice del curso, no se fija en `100`, po
 
 ## Estados
 
-- **Sin curso:** explicar la estructura requerida y cómo elegir la raíz.
+- **Preparando el curso:** clonar el repositorio oficial al directorio de datos cuando no exista un checkout detectable.
+- **Preparando verificación:** instalar `wr` con Cargo en segundo plano si falta.
 - **Curso listo:** mostrar el ejercicio actual, el avance y acciones de teclado.
 - **Verificando:** indicar que `wr` está ejecutándose sin congelar Neovim.
 - **Resuelto:** mostrar confirmación y ofrecer el siguiente ejercicio.
 - **Fallo:** mantener la salida completa de `wr` disponible para revisar.
-- **Dependencia ausente:** indicar cuál falta (`git`, `cargo`, `wr`) y el paso para resolverla.
+- **Dependencia base ausente:** explicar si falta Git o Cargo, que son necesarios para completar la preparación automática.
 
 ## Atajos del panel
 

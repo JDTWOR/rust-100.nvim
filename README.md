@@ -6,7 +6,7 @@ The goal is to keep the study loop in Neovim: read a lesson, open its exercise, 
 
 ## Project status
 
-The initial Neovim workflow is in place: course dashboard, lesson and exercise navigation, TODO quickfix, and asynchronous `wr` checks. The workshop runner is not installed in the development environment, so an end-to-end exercise check has not been run here.
+The initial Neovim workflow is in place: course dashboard, lesson and exercise navigation, TODO quickfix, asynchronous checks, and automatic first-run setup.
 
 ## Planned workflow
 
@@ -16,21 +16,13 @@ The initial Neovim workflow is in place: course dashboard, lesson and exercise n
 - Run the official workshop runner (`wr`) without blocking the editor.
 - See check results and course progress, then open the next exercise.
 
-The plugin is intended to orchestrate the existing course checkout and `wr`; course content and exercise verification remain owned by their upstream projects.
+The plugin downloads the official course checkout when needed and installs its workshop runner in the background. Course content and exercise verification remain owned by their upstream projects.
 
 ## Requirements
 
 - Neovim 0.10 or newer for Neovim's asynchronous `vim.system()` process API.
-- A local checkout of the course, with its Git metadata intact.
-- Git, Rust/Cargo, and the `wr` workshop runner.
+- Git and Rust/Cargo. The plugin clones the course and installs `wr` automatically when needed.
 - `rust-analyzer` is recommended for Rust diagnostics and completion, but the plugin will not install or configure it.
-
-Install the course and workshop runner with their upstream instructions:
-
-```sh
-git clone https://github.com/mainmatter/100-exercises-to-learn-rust
-cargo install --locked workshop-runner
-```
 
 ## Setup
 
@@ -40,16 +32,14 @@ With `lazy.nvim`, add this spec to `lua/plugins/rust100.lua` (or the equivalent 
 return {
   "JDTWOR/rust-100.nvim",
   lazy = false,
-  opts = {
-    course_root = vim.fn.expand("~/src/100-exercises-to-learn-rust"),
-  },
+  opts = { auto_setup = true },
   config = function(_, opts)
     require("rust100").setup(opts)
   end,
 }
 ```
 
-If `course_root` is omitted, the plugin searches upward from the current buffer and working directory. The course checkout must retain its `.git` directory because `wr` uses Git to find the repository root.
+On the first `:Rust100` command, the plugin searches the current buffer and working directory for a course checkout. If none is found, it clones the official repository to `stdpath("data")/rust100/course`. It installs `wr` into `stdpath("data")/rust100/toolchain` in the background using Cargo. Set `course_root` to choose a different checkout location. Set `auto_setup = false` to disable downloads and installation.
 
 ## Commands
 
@@ -73,7 +63,7 @@ The plugin stores its dashboard cursor and checkmarks under `stdpath("state")/ru
 - Course website: <https://rust-exercises.com/100-exercises/>
 - Workshop runner: <https://github.com/mainmatter/rust-workshop-runner>
 
-The course repository states that its material is released under CC BY-NC 4.0. The planned setup flow will use an upstream checkout and retain its attribution. The license for this plugin's own code is still to be decided.
+The course repository states that its material is released under CC BY-NC 4.0. The plugin uses the upstream checkout and retains its attribution. The license for this plugin's own code is still to be decided.
 
 ## Work plan
 

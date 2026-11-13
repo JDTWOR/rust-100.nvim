@@ -4,7 +4,8 @@
 
 - La estructura del curso y el flujo de `wr` ya están revisados en sus repositorios oficiales.
 - El diseño de interacción está documentado en [UX.md](UX.md).
-- La base Lua implementa detección del curso, navegación, quickfix de tareas, estado local y verificación asíncrona. La verificación real de ejercicios queda pendiente porque `wr` no está instalado en el entorno de desarrollo.
+- La base Lua implementa navegación, quickfix, estado local y verificación asíncrona. En el primer uso clona el curso oficial si hace falta e instala `wr` en el directorio de datos de Neovim.
+- La primera ejecución crea el archivo JSON de progreso automáticamente, incluso cuando aún no existe.
 
 ## Objetivo
 
@@ -27,13 +28,13 @@ El plugin debe sentirse integrado con Neovim, ser claro en terminales pequeñas 
 - `wr` guarda su progreso en SQLite, en `exercises/progress.db`. El esquema es un detalle interno del runner, así que el plugin no lo leerá directamente.
 - Las rutas de `book/src/SUMMARY.md` siguen el mismo capítulo y nombre base que los paquetes bajo `exercises/`; el plugin puede resolver la pareja sin copiar el contenido del curso.
 - El `.wr.toml` del curso está vacío y el runner usa `exercises` como ruta predeterminada.
-- En el entorno de desarrollo hay Neovim 0.12.6 y Rust 1.96.0. `wr` no está instalado, así que la integración de ejecución debe tratarse como no verificada hasta disponer del runner.
+- En el entorno de desarrollo hay Neovim 0.12.6 y Rust 1.96.0. El flujo automático de instalación de `wr` debe confirmarse con una ejecución real del runner.
 
 **Decisión para la primera versión:** guardar el capítulo actual y los ejercicios aprobados por el plugin en un archivo JSON bajo el directorio de estado de Neovim. En cada verificación, registrar el ejercicio con `wr open` y ejecutar `wr check`. Así se mantiene el progreso de `wr` y la sesión de Neovim sin depender de su SQLite. Si se usa `wr` directamente fuera del plugin, la lista local puede requerir reanudación manual; sincronizar ese caso queda para una fase posterior.
 
 ## Recorrido propuesto
 
-1. `:Rust100` abre el panel del curso y detecta o solicita la ruta del checkout.
+1. `:Rust100` abre el panel, detecta un checkout o clona el curso; también instala `wr` en segundo plano si hace falta.
 2. El panel muestra capítulo, ejercicio actual, avance y acciones disponibles.
 3. Abrir el ejercicio prepara una vista de código y una vista Markdown de la lección.
 4. La búsqueda de tareas lleva los `TODO` y `todo!()` a quickfix.
@@ -68,7 +69,7 @@ La fase técnica determinará el comando y el formato de estado fiables para con
 - Detectar la raíz del curso y añadir `:checkhealth` para Git, Rust, `wr` y la estructura esperada.
 - Evitar sobrescribir soluciones, archivos existentes o configuración del usuario.
 
-**Salida:** plugin cargable que reconoce un checkout local y explica qué requisito falta.
+**Salida:** plugin cargable que detecta o clona el checkout y prepara `wr` automáticamente cuando Git y Cargo están disponibles.
 
 ### 3. Lecciones, ejercicios y tareas
 
@@ -122,7 +123,7 @@ Este hito valida la integración principal antes de invertir tiempo en un dashbo
 1. **Estado de `wr`:** el runner no ofrece un comando documentado para consultar progreso; la vista inicial usa estado propio del plugin.
 2. **Licencia:** decidir la licencia del código del plugin; el contenido de Mainmatter conserva su CC BY-NC 4.0.
 3. **Versión mínima de Neovim:** fijada en 0.10 por la API `vim.system()`.
-4. **Instalación del curso:** definir si el plugin solo detecta una copia existente o también ofrece clonar el repositorio a una ruta elegida.
+4. **Instalación del curso:** resuelto; reutiliza un checkout detectado o clona el curso oficial al directorio de datos de Neovim. `course_root` permite elegir otra ruta.
 5. **Auto check:** mantenerlo opcional y desactivado inicialmente para evitar ejecuciones inesperadas.
 
 ## Convención de commits

@@ -9,7 +9,14 @@ end
 function M.load(root, exercises)
   local total = #exercises
   local path = state_file(root)
-  local lines = vim.fn.readfile(path)
+  local exists = vim.uv.fs_stat(path) ~= nil
+  local lines = {}
+  if vim.fn.filereadable(path) == 1 then
+    local ok, contents = pcall(vim.fn.readfile, path)
+    if ok then
+      lines = contents
+    end
+  end
   if #lines > 0 then
     local ok, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
     if ok and type(decoded) == "table" and decoded.root == root then
@@ -26,7 +33,7 @@ function M.load(root, exercises)
       decoded.current = math.max(1, math.min(total, math.floor(current)))
       decoded.current_id = exercises[decoded.current].id
       decoded.completed = type(decoded.completed) == "table" and decoded.completed or {}
-      return decoded, path
+      return decoded, path, false
     end
   end
 
@@ -36,7 +43,7 @@ function M.load(root, exercises)
     current = 1,
     current_id = exercises[1].id,
     completed = {},
-  }, path
+  }, path, not exists
 end
 
 function M.save(state, path)

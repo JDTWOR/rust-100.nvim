@@ -1,28 +1,19 @@
 local course = require("rust100.course")
 local progress = require("rust100.state")
 local ui = require("rust100.ui")
+local bootstrap = require("rust100.bootstrap")
 
 local M = {}
-local config = { course_root = nil }
+local config = { course_root = nil, auto_setup = true }
 local check_running = false
 
 local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "Rust 100" })
 end
 
-local function context()
-  local root
-  if config.course_root then
-    root = course.find_root(config.course_root)
-    if not root then
-      return nil, "Configured course_root is not a 100 Exercises checkout: " .. config.course_root
-    end
-  else
-    root = course.find_root(vim.api.nvim_buf_get_name(0)) or course.find_root(vim.fn.getcwd())
-  end
-
+local function context(root)
   if not root then
-    return nil, "Course not found. Open Neovim inside its checkout or set course_root in setup()."
+    return nil, "Course not found."
   end
 
   local exercises, err = course.load(root)
@@ -30,7 +21,13 @@ local function context()
     return nil, err
   end
 
-  local state, state_path = progress.load(root, exercises)
+  local state, state_path, is_new = progress.load(root, exercises)
+  if is_new then
+    local saved, save_error = progress.save(state, state_path)
+    if not saved then
+      notify("Could not initialize course progress: " .. tostring(save_error), vim.log.levels.WARN)
+    end
+  end
   return {
     root = root,
     exercises = exercises,
@@ -121,22 +118,7 @@ local function show_check_error(result)
   notify("Check failed with exit code " .. tostring(result.code) .. ". Review the runner output.", vim.log.levels.WARN)
 end
 
-local function check_exercise(ctx, index)
-  local exercise = ctx.exercises[index]
-  if not exercise then
-    notify("There is no exercise at position " .. tostring(index) .. ".", vim.log.levels.ERROR)
-    return
-  end
-  if check_running then
-    notify("A course check is already running.", vim.log.levels.WARN)
-    return
-  end
-
-  check_running = true
-  ctx.state.current = index
-  save(ctx)
-  notify("Verifying " .. exercise.chapter .. "/" .. exercise.name .. "…")
-
+local function run_check(ctx, exercise, index)
   local active_path = course.normalize(vim.api.nvim_buf_get_name(0))
   local source_root = course.normalize(vim.fs.joinpath(exercise.dir, "src")) .. package.config:sub(1, 1)
   local is_rust_source = active_path:sub(1, #source_root) == source_root and active_path:match("%.rs$") ~= nil
@@ -176,6 +158,32 @@ local function check_exercise(ctx, index)
         notify("All course exercises are complete. Nice work!", vim.log.levels.INFO)
       end
     end)
+  end)
+end
+
+local function check_exercise(ctx, index)
+  local exercise = ctx.exercises[index]
+  if not exercise then
+    notify("There is no exercise at position " .. tostring(index) .. ".", vim.log.levels.ERROR)
+    return
+  end
+  if check_running then
+    notify("A course check is already running.", vim.log.levels.WARN)
+    return
+  end
+
+  check_running = true
+  ctx.state.current = index
+  save(ctx)
+  notify("Preparing to verify " .. exercise.chapter .. "/" .. exercise.name .. "…")
+  bootstrap.ensure_runner(config, function(ready, err)
+    if not ready then
+      check_running = false
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    notify("Verifying " .. exercise.chapter .. "/" .. exercise.name .. "…")
+    run_check(ctx, exercise, index)
   end)
 end
 
@@ -237,49 +245,38 @@ local function find_todos(ctx, index)
   vim.cmd("copen")
 end
 
-local function context_or_notify()
-  local ctx, err = context()
-  if not ctx then
-    notify(err, vim.log.levels.ERROR)
-  end
-  return ctx
-end
-
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
 end
 
 function M.health()
   local lines = { "Rust 100 health" }
-  for _, command in ipairs({ "git", "cargo", "rustc", "wr" }) do
+  for _, command in ipairs({ "git", "cargo", "rustc" }) do
     local status = vim.fn.executable(command) == 1 and "available" or "missing"
     lines[#lines + 1] = string.format("%s: %s", command, status)
   end
+  local runner_status = "missing"
+  if bootstrap.runner_available() then
+    runner_status = "available"
+  elseif config.auto_setup and vim.fn.executable("cargo") == 1 and vim.fn.executable("rustc") == 1 then
+    runner_status = "will install automatically"
+  end
+  lines[#lines + 1] = string.format("wr: %s", runner_status)
   lines[#lines + 1] = string.format("rust-analyzer: %s (optional)", vim.fn.executable("rust-analyzer") == 1 and "available" or "missing")
 
-  local root
-  if config.course_root then
-    root = course.find_root(config.course_root)
+  local root, target = bootstrap.course_target(config)
+  if root then
+    lines[#lines + 1] = "course: " .. root
+  elseif config.auto_setup then
+    lines[#lines + 1] = "course: will download to " .. target
   else
-    root = course.find_root(vim.api.nvim_buf_get_name(0)) or course.find_root(vim.fn.getcwd())
+    lines[#lines + 1] = "course: not found"
   end
-  lines[#lines + 1] = "course: " .. (root or "not found")
   vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Rust 100 health" })
 end
 
-function M.command(args)
-  args = args or {}
+local function dispatch(ctx, args)
   local action = args[1] or "dashboard"
-  if action == "health" then
-    M.health()
-    return
-  end
-
-  local ctx = context_or_notify()
-  if not ctx then
-    return
-  end
-
   local index = tonumber(args[2]) or current_index(ctx)
   if action == "dashboard" or action == "list" then
     open_dashboard(ctx)
@@ -296,6 +293,44 @@ function M.command(args)
   else
     notify("Unknown action. Use :Rust100 with no arguments to open the course panel.", vim.log.levels.ERROR)
   end
+end
+
+function M.command(args)
+  args = args or {}
+  local action = args[1] or "dashboard"
+  if action == "health" then
+    M.health()
+    return
+  end
+
+  local supported = { dashboard = true, list = true, open = true, lesson = true, check = true, next = true, todos = true }
+  if not supported[action] then
+    notify("Unknown action. Use :Rust100 with no arguments to open the course panel.", vim.log.levels.ERROR)
+    return
+  end
+
+  bootstrap.ensure_course(config, function(root, setup_error)
+    if not root then
+      notify(setup_error, vim.log.levels.ERROR)
+      return
+    end
+
+    local ctx, context_error = context(root)
+    if not ctx then
+      notify(context_error, vim.log.levels.ERROR)
+      return
+    end
+
+    if action ~= "check" then
+      bootstrap.ensure_runner(config, function(ready, runner_error)
+        if not ready then
+          notify(runner_error, vim.log.levels.WARN)
+        end
+      end)
+    end
+
+    dispatch(ctx, args)
+  end)
 end
 
 function M.complete(arglead)

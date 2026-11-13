@@ -2,17 +2,21 @@
 
 Requirements ~
 
-Neovim 0.10+, Git, Rust/Cargo, the course repository, and `wr` (workshop-runner).
-`rust-analyzer` is recommended for Rust completion and diagnostics.
+Neovim 0.10+, Git, and Rust/Cargo. On the first `:Rust100` invocation,
+rust100 clones the official course if no checkout is found and installs `wr`
+in the background. `rust-analyzer` is recommended for diagnostics.
 
 Setup ~
 
     require("rust100").setup({
-      course_root = vim.fn.expand("~/src/100-exercises-to-learn-rust"),
+      auto_setup = true,
     })
 
 If `course_root` is omitted, rust100 searches upward from the current buffer
-and working directory for the course structure.
+and working directory. If the checkout is not found, it clones the course to
+`stdpath("data")/rust100/course`. It installs the workshop runner to
+`stdpath("data")/rust100/toolchain`. Set `auto_setup = false` to disable these
+automatic downloads and installations.
 
 Commands ~
 

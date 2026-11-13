@@ -82,9 +82,12 @@ end
 
 function M.load(root)
   local summary_path = join(root, "book", "src", "SUMMARY.md")
-  local summary = vim.fn.readfile(summary_path)
-  if #summary == 0 and not stat(summary_path) then
+  if not stat(summary_path) then
     return nil, "The course index was not found at " .. summary_path
+  end
+  local ok, summary = pcall(vim.fn.readfile, summary_path)
+  if not ok then
+    return nil, "The course index could not be read at " .. summary_path
   end
 
   local exercises = {}
