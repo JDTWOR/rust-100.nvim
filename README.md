@@ -34,12 +34,19 @@ cargo install --locked workshop-runner
 
 ## Setup
 
-Add the plugin to Neovim's runtime path through your plugin manager, then point it to the course checkout:
+With `lazy.nvim`, add this spec to `lua/plugins/rust100.lua` (or the equivalent file in your plugin-spec directory):
 
 ```lua
-require("rust100").setup({
-  course_root = vim.fn.expand("~/src/100-exercises-to-learn-rust"),
-})
+return {
+  "JDTWOR/rust-100.nvim",
+  lazy = false,
+  opts = {
+    course_root = vim.fn.expand("~/src/100-exercises-to-learn-rust"),
+  },
+  config = function(_, opts)
+    require("rust100").setup(opts)
+  end,
+}
 ```
 
 If `course_root` is omitted, the plugin searches upward from the current buffer and working directory. The course checkout must retain its `.git` directory because `wr` uses Git to find the repository root.
