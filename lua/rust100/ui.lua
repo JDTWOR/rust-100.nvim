@@ -58,7 +58,7 @@ local function dashboard_lines(exercises, state, selected, panel_width, panel_he
   for index = start_index, start_index + visible - 1 do
     local exercise = exercises[index]
     local marker = state.completed[exercise.id] == true and "✓" or " "
-    if index == selected then
+    if index == selected and state.completed[exercise.id] ~= true then
       marker = "›"
     end
     local label = exercise.chapter .. " / " .. exercise.name
@@ -220,7 +220,7 @@ function M.refresh_dashboard(state)
 end
 
 local function study_winbar(exercise, index, total, completed, status)
-  status = status or (completed and "RESUELTO" or "PENDIENTE")
+  status = status or (completed and "✓ RESUELTO · <leader>rn" or "PENDIENTE")
   return string.format("  RUST 100  ·  %s / %s  ·  EJERCICIO %d DE %d  ·  %s", exercise.chapter, exercise.name, index, total, status)
 end
 

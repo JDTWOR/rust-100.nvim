@@ -330,6 +330,7 @@ local function run_check(request)
         return
       end
 
+      local was_completed = ctx.state.completed[exercise.id] == true
       ctx.state.completed[exercise.id] = true
       save(ctx)
       local buf = request.buf or vim.fn.bufnr(exercise.source)
@@ -337,10 +338,12 @@ local function run_check(request)
         check_outputs[buf] = nil
       end
       ui.close_check_output()
-      ui.update_study(buf, exercise, index, #ctx.exercises, true, "RESUELTO")
+      ui.update_study(buf, exercise, index, #ctx.exercises, true, "✓ RESUELTO · <leader>rn")
       ui.refresh_dashboard(ctx.state)
       if not request.automatic then
         notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
+      elseif not was_completed then
+        notify("✓ Ejercicio " .. tostring(index) .. " de " .. tostring(#ctx.exercises) .. " resuelto. <leader>rn para continuar.", vim.log.levels.INFO)
       end
       finish_check(request)
     end)

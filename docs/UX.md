@@ -37,7 +37,8 @@ La cantidad total se calcula desde el índice del curso, no se fija en `100`, po
 - Guardar verifica en segundo plano sin mover el foco; los resultados de versiones antiguas se descartan.
 - Un fallo automático queda en la winbar y abre el resumen solo cuando se solicita.
 - Un fallo manual muestra primero el diagnóstico breve; `d` alterna la salida completa y `q` cierra el panel.
-- Si pasa, el panel marca el ejercicio como resuelto y el usuario elige cuándo avanzar.
+- Al aprobar por primera vez, aparece una confirmación breve y la winbar indica `<leader>rn` para avanzar.
+- El mapa conserva la marca de completado incluso cuando ese ejercicio sigue seleccionado.
 
 ## Estados
 

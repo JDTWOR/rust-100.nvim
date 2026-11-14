@@ -43,7 +43,7 @@ On the first `:Rust100` command, the plugin searches the current buffer and work
 
 Opening an exercise shows the Rust source at full width and places the cursor on its first code placeholder. The winbar shows the exercise number, course position, and state. Press `<leader>rl` to read the lesson in a wrapped reading view, then `q` to return to the code. Saving runs a check silently after a short debounce; the default `auto_check_delay` is 700 milliseconds. If you save again while a check is running, its stale result is discarded and the latest saved version is checked. A passing result marks the exercise solved and waits for you to move on with `<leader>rn`.
 
-Automatic failures keep focus in the code and show the failed state in the winbar. Press `<leader>ro` to open a concise error summary, then `d` to toggle the runner's full output. Manual checks with `<leader>rr` or `:Rust100 check` open the same summary. Save the file before starting a manual check. Set `auto_check = false` to disable checks on save.
+Automatic failures keep focus in the code and show the failed state in the winbar. Press `<leader>ro` to open a concise error summary, then `d` to toggle the runner's full output. A newly solved exercise shows a brief confirmation and a `✓ RESUELTO · <leader>rn` state; repeated passing saves do not repeat the confirmation. Manual checks with `<leader>rr` or `:Rust100 check` open the same summary. Save the file before starting a manual check. Set `auto_check = false` to disable checks on save.
 
 ## Commands
 
