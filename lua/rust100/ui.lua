@@ -217,29 +217,9 @@ function M.refresh_dashboard(state)
   end
 end
 
-local function leader_label()
-  local leader = vim.g.mapleader or "\\"
-  if leader == " " then
-    return "<Space>"
-  end
-  return leader
-end
-
 local function study_winbar(exercise, index, total, completed, status)
   status = status or (completed and "RESUELTO" or "PENDIENTE")
-  local leader = leader_label()
-  return string.format(
-    "  RUST 100  ·  %s / %s  ·  %d/%d  ·  %s  ·  [%srl] lección  [%srr] comprobar  [%srt] tareas  [%srn] siguiente",
-    exercise.chapter,
-    exercise.name,
-    index,
-    total,
-    status,
-    leader,
-    leader,
-    leader,
-    leader
-  )
+  return string.format("  RUST 100  ·  %s / %s  ·  %d/%d  ·  %s", exercise.chapter, exercise.name, index, total, status)
 end
 
 local function mark_tasks(buf, exercise)
@@ -249,23 +229,10 @@ local function mark_tasks(buf, exercise)
       vim.api.nvim_buf_set_extmark(buf, exercise_ns, marker.lnum - 1, 0, {
         sign_text = "›",
         sign_hl_group = "DiagnosticWarn",
-        line_hl_group = "CursorLine",
         priority = 110,
       })
     end
   end
-  local win = vim.fn.win_findbuf(buf)[1]
-  local width = win and vim.api.nvim_win_get_width(win) or vim.o.columns
-  local task = "  TAREA  " .. (exercise.task or "Lee la lección y completa el ejercicio.")
-  if vim.fn.strdisplaywidth(task) > width - 6 then
-    task = vim.fn.strcharpart(task, 0, math.max(12, width - 7)) .. "…"
-  end
-  vim.api.nvim_buf_set_extmark(buf, exercise_ns, math.max(0, (exercise.focus_line or 1) - 1), 0, {
-    virt_lines = { { { task, "Title" } } },
-    virt_lines_above = true,
-    virt_lines_leftcol = true,
-    priority = 120,
-  })
 end
 
 function M.study_buffer(buf, exercise, index, total, completed, handlers)
