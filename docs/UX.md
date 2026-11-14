@@ -7,15 +7,16 @@ Una interfaz de terminal tranquila, con jerarquía tipográfica clara y los colo
 ## Panel del curso
 
 ```text
- RUST 100                                             COURSE
+  RUST 100                                      TALLER DE RUST
 
-  18 / ~100 ejercicios completados
+  AVANCE   18 / 98 resueltos
   ━━━━━━━━━━━━──────────────────────────────────────
 
-  Ahora
+  EJERCICIO ACTUAL
   03_ticket_v1 / 06_ownership
-  La lección y el ejercicio se abrirán en ventanas lado a lado.
+  Tarea: completa los métodos de ownership.
 
+  MAPA DEL CURSO
   ✓ 01_intro / 00_welcome
   ✓ 01_intro / 01_syntax
   ✓ 02_basic_calculator / 00_intro
@@ -23,26 +24,28 @@ Una interfaz de terminal tranquila, con jerarquía tipográfica clara y los colo
     03_ticket_v1 / 07_setters
     03_ticket_v1 / 08_stack
 
-  j/k mover   Enter abrir   l lección   r verificar   ? ayuda   q cerrar
+  j/k mover   Enter abrir   l leer teoría   r comprobar   q cerrar
 ```
 
 La cantidad total se calcula desde el índice del curso, no se fija en `100`, porque el curso describe su número como aproximado y puede cambiar.
 
 ## Vista de estudio
 
-- Código del ejercicio en la ventana principal.
-- Lección Markdown en una ventana vertical que se puede cerrar o volver a abrir.
-- Atajos locales para abrir el panel, leer la lección, buscar tareas y verificar.
-- Si falla la verificación, la salida queda visible en una ventana inferior y el foco vuelve al código.
-- Si pasa, se actualiza el avance local y se abre el siguiente ejercicio.
+- Código del ejercicio a ancho completo, con el cursor en el primer marcador de código.
+- El winbar muestra ejercicio, avance y acciones disponibles.
+- La lección Markdown abre en una vista de lectura con ajuste de línea y vuelve al código con `q`.
+- Guardar el código verifica el ejercicio automáticamente; se puede desactivar en la configuración.
+- Si falla, la salida completa se abre en una ventana legible; `q` vuelve al código.
+- Si pasa, el panel marca el ejercicio como resuelto y el usuario elige cuándo avanzar.
 
 ## Estados
 
 - **Preparando el curso:** clonar el repositorio oficial al directorio de datos cuando no exista un checkout detectable.
 - **Preparando verificación:** instalar `wr` con Cargo en segundo plano si falta.
+- **Leyendo:** mostrar la lección a ancho completo con texto ajustado al terminal.
 - **Curso listo:** mostrar el ejercicio actual, el avance y acciones de teclado.
 - **Verificando:** indicar que `wr` está ejecutándose sin congelar Neovim.
-- **Resuelto:** mostrar confirmación y ofrecer el siguiente ejercicio.
+- **Resuelto:** mostrar confirmación y esperar a que la persona avance.
 - **Fallo:** mantener la salida completa de `wr` disponible para revisar.
 - **Dependencia base ausente:** explicar si falta Git o Cargo, que son necesarios para completar la preparación automática.
 

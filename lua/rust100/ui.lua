@@ -2,7 +2,9 @@ local M = {}
 
 local dashboard_ns = vim.api.nvim_create_namespace("rust100.dashboard")
 local output_ns = vim.api.nvim_create_namespace("rust100.check-output")
+local exercise_ns = vim.api.nvim_create_namespace("rust100.exercise-tasks")
 local output_window
+local dashboard_views = {}
 
 local function close_window(window)
   if window and vim.api.nvim_win_is_valid(window) then
@@ -22,59 +24,55 @@ local function truncate(value, width)
   return vim.fn.strcharpart(value, 0, math.max(1, width - 1)) .. "…"
 end
 
-local function dashboard_lines(exercises, state, selected)
+local function dashboard_lines(exercises, state, selected, panel_width, panel_height)
   local total = #exercises
   local completed = require("rust100.state").completed_count(state, exercises)
-  local available_height = math.max(1, vim.o.lines - 4)
-  local panel_width = math.max(1, math.min(88, vim.o.columns - 4))
-  local compact = available_height < 20 or panel_width < 74
-  local visible = math.min(total, compact and math.max(1, available_height - 11) or math.min(7, available_height - 14))
+  local compact = panel_height < 20 or panel_width < 78
+  local reserved = compact and 15 or 16
+  local visible = math.max(1, math.min(total, 7, panel_height - reserved))
   local start_index = math.max(1, math.min(total - visible + 1, selected - math.floor((visible - 1) / 2)))
-  local width = math.min(30, math.max(8, panel_width - 54))
   local chosen = exercises[selected]
+  local header = compact and "  RUST 100 · TALLER DE RUST" or "  RUST 100                                                   TALLER DE RUST"
   local lines = {
     "",
-    compact and "  RUST 100 · NEOVIM" or "  RUST 100  /  LEARN IN NEOVIM",
-    compact and ("  " .. completed .. " / " .. total .. " complete") or "  Read the lesson. Solve the exercise. Keep moving.",
+    truncate(header, panel_width - 4),
+    truncate("  Aprende un concepto, resuelve una tarea y comprueba tu código.", panel_width - 4),
     "",
-    "  " .. progress_bar(completed, total, width),
+    string.format("  AVANCE   %d / %d resueltos", completed, total),
+    "  " .. progress_bar(completed, total, math.min(34, math.max(8, panel_width - 12))),
     "",
-    compact and "  SELECTED" or "  SELECTED EXERCISE",
+    "  EJERCICIO ACTUAL",
     "  " .. truncate(chosen.title, math.max(12, panel_width - 4)),
     "  " .. chosen.chapter .. " / " .. chosen.name,
+    "  Tarea: " .. truncate(chosen.task or "Lee la lección y completa el ejercicio.", math.max(12, panel_width - 12)),
+    "",
+    "  MAPA DEL CURSO",
   }
   local selected_line = 8
-
-  if not compact then
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "  " .. completed .. " of " .. total .. " exercises complete"
-  end
-
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = compact and "  NEARBY" or "  COURSE MAP"
+  local map_line = #lines - 1
   local first_item_line = #lines
   local item_lines = {}
 
   for index = start_index, start_index + visible - 1 do
     local exercise = exercises[index]
-    local marker = state.completed[exercise.id] == true and "✓" or "·"
+    local marker = state.completed[exercise.id] == true and "✓" or " "
     if index == selected then
       marker = "›"
     end
     local label = exercise.chapter .. " / " .. exercise.name
-    local label_width = math.max(12, math.floor((panel_width - 10) * 0.58))
+    local label_width = math.max(12, math.floor((panel_width - 12) * 0.52))
     label = truncate(label, label_width)
     local title_width = math.max(5, panel_width - vim.fn.strdisplaywidth(label) - 14)
-    local text = string.format("  %s %s  %s", marker, label, truncate(exercise.title, title_width))
+    local text = string.format("  %s  %s  %s", marker, label, truncate(exercise.title, title_width))
     lines[#lines + 1] = text
     item_lines[#item_lines + 1] = { line = #lines - 1, index = index }
   end
 
   lines[#lines + 1] = ""
-  local footer = compact and "  j/k browse · Enter open · r check · q close" or "  j/k select   Enter open   l lesson   r verify   ? help   q close"
+  local footer = compact and "  j/k mover · Enter abrir · l leer · q cerrar" or "  j/k mover   Enter abrir   l leer teoría   r comprobar   ? ayuda   q cerrar"
   lines[#lines + 1] = truncate(footer, panel_width - 2)
 
-  return lines, selected_line, first_item_line, item_lines
+  return lines, selected_line, map_line, first_item_line, item_lines
 end
 
 function M.dashboard(exercises, state, handlers)
@@ -87,9 +85,9 @@ function M.dashboard(exercises, state, handlers)
   vim.bo[buf].filetype = "rust100"
   vim.bo[buf].modifiable = false
 
-  local width = math.max(1, math.min(88, vim.o.columns - 4))
+  local width = math.max(1, math.min(100, vim.o.columns - 4))
   local row_limit = math.max(1, vim.o.lines - 2)
-  local height = math.min(row_limit, 24)
+  local height = math.min(row_limit, 26)
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
@@ -105,6 +103,7 @@ function M.dashboard(exercises, state, handlers)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
+  vim.wo[win].winbar = ""
   vim.wo[win].winhl = "Normal:NormalFloat,FloatBorder:FloatBorder"
 
   local function render()
@@ -112,7 +111,7 @@ function M.dashboard(exercises, state, handlers)
       return
     end
 
-    local lines, selected_line, first_item_line, item_lines = dashboard_lines(exercises, state, selected)
+    local lines, selected_line, map_line, first_item_line, item_lines = dashboard_lines(exercises, state, selected, width, height)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
@@ -120,8 +119,11 @@ function M.dashboard(exercises, state, handlers)
     vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Title", 1, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Comment", 2, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Special", 4, 0, -1)
-    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Title", 6, 0, -1)
-    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Comment", 7, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Title", 7, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Comment", 8, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Comment", 9, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "WarningMsg", 10, 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Title", map_line, 0, -1)
     if selected_line >= 0 then
       vim.api.nvim_buf_add_highlight(buf, dashboard_ns, "Identifier", selected_line, 0, -1)
     end
@@ -146,6 +148,15 @@ function M.dashboard(exercises, state, handlers)
     end
   end
 
+  dashboard_views[buf] = { render = render, state = state }
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = buf,
+    once = true,
+    callback = function()
+      dashboard_views[buf] = nil
+    end,
+  })
+
   local function close_and_call(callback)
     close_window(win)
     callback(selected)
@@ -153,6 +164,9 @@ function M.dashboard(exercises, state, handlers)
 
   local function move(delta)
     selected = math.max(1, math.min(#exercises, selected + delta))
+    if handlers.select then
+      handlers.select(selected)
+    end
     render()
   end
 
@@ -185,10 +199,129 @@ function M.dashboard(exercises, state, handlers)
     close_and_call(handlers.check)
   end, opts)
   vim.keymap.set("n", "?", function()
-    vim.notify("Enter open · l read the lesson · r verify · j/k browse · q close", vim.log.levels.INFO, { title = "Rust 100" })
+    vim.notify("Enter abre el ejercicio · l lee la lección · r comprueba · j/k recorren · q cierra", vim.log.levels.INFO, { title = "Rust 100" })
   end, opts)
 
   render()
+end
+
+function M.refresh_dashboard(state)
+  for buf, view in pairs(dashboard_views) do
+    if view.state == state then
+      if vim.api.nvim_buf_is_valid(buf) then
+        view.render()
+      else
+        dashboard_views[buf] = nil
+      end
+    end
+  end
+end
+
+local function leader_label()
+  local leader = vim.g.mapleader or "\\"
+  if leader == " " then
+    return "<Space>"
+  end
+  return leader
+end
+
+local function study_winbar(exercise, index, total, completed, status)
+  status = status or (completed and "RESUELTO" or "PENDIENTE")
+  local leader = leader_label()
+  return string.format(
+    "  RUST 100  ·  %s / %s  ·  %d/%d  ·  %s  ·  [%srl] lección  [%srr] comprobar  [%srt] tareas  [%srn] siguiente",
+    exercise.chapter,
+    exercise.name,
+    index,
+    total,
+    status,
+    leader,
+    leader,
+    leader,
+    leader
+  )
+end
+
+local function mark_tasks(buf, exercise)
+  vim.api.nvim_buf_clear_namespace(buf, exercise_ns, 0, -1)
+  for _, marker in ipairs(exercise.markers or {}) do
+    if marker.filename == exercise.source then
+      vim.api.nvim_buf_set_extmark(buf, exercise_ns, marker.lnum - 1, 0, {
+        sign_text = "›",
+        sign_hl_group = "DiagnosticWarn",
+        line_hl_group = "CursorLine",
+        priority = 110,
+      })
+    end
+  end
+  local win = vim.fn.win_findbuf(buf)[1]
+  local width = win and vim.api.nvim_win_get_width(win) or vim.o.columns
+  local task = "  TAREA  " .. (exercise.task or "Lee la lección y completa el ejercicio.")
+  if vim.fn.strdisplaywidth(task) > width - 6 then
+    task = vim.fn.strcharpart(task, 0, math.max(12, width - 7)) .. "…"
+  end
+  vim.api.nvim_buf_set_extmark(buf, exercise_ns, math.max(0, (exercise.focus_line or 1) - 1), 0, {
+    virt_lines = { { { task, "Title" } } },
+    virt_lines_above = true,
+    virt_lines_leftcol = true,
+    priority = 120,
+  })
+end
+
+function M.study_buffer(buf, exercise, index, total, completed, handlers)
+  local windows = vim.fn.win_findbuf(buf)
+  for _, win in ipairs(windows) do
+    vim.wo[win].wrap = true
+    vim.wo[win].linebreak = true
+    vim.wo[win].breakindent = true
+    vim.wo[win].number = true
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = "yes:1"
+    vim.wo[win].winbar = study_winbar(exercise, index, total, completed)
+  end
+
+  mark_tasks(buf, exercise)
+
+  local opts = { buffer = buf, silent = true, desc = "Rust 100" }
+  vim.keymap.set("n", "<leader>rl", handlers.lesson, vim.tbl_extend("force", opts, { desc = "Leer la lección" }))
+  vim.keymap.set("n", "<leader>rr", handlers.check, vim.tbl_extend("force", opts, { desc = "Comprobar ejercicio" }))
+  vim.keymap.set("n", "<leader>rt", handlers.todos, vim.tbl_extend("force", opts, { desc = "Buscar tareas pendientes" }))
+  vim.keymap.set("n", "<leader>rm", handlers.dashboard, vim.tbl_extend("force", opts, { desc = "Mapa del curso" }))
+  vim.keymap.set("n", "<leader>rn", handlers.next, vim.tbl_extend("force", opts, { desc = "Siguiente ejercicio" }))
+  vim.keymap.set("n", "<leader>rp", handlers.previous, vim.tbl_extend("force", opts, { desc = "Ejercicio anterior" }))
+end
+
+function M.refresh_tasks(buf, exercise)
+  if vim.api.nvim_buf_is_valid(buf) then
+    mark_tasks(buf, exercise)
+  end
+end
+
+function M.update_study(buf, exercise, index, total, completed, status)
+  if not buf or buf < 1 or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.wo[win].winbar = study_winbar(exercise, index, total, completed, status)
+  end
+end
+
+function M.lesson_buffer(buf, exercise, on_return)
+  vim.bo[buf].filetype = "markdown"
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].conceallevel = 2
+  vim.bo[buf].concealcursor = "nc"
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.wo[win].wrap = true
+    vim.wo[win].linebreak = true
+    vim.wo[win].breakindent = true
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = "no"
+    vim.wo[win].winbar = string.format("  RUST 100  ·  LECCIÓN  ·  %s / %s  ·  q volver al código", exercise.chapter, exercise.name)
+  end
+  vim.keymap.set("n", "q", on_return, { buffer = buf, silent = true, desc = "Volver al ejercicio" })
+  vim.keymap.set("n", "<leader>rm", on_return, { buffer = buf, silent = true, desc = "Volver al ejercicio" })
 end
 
 function M.show_check_failure(output)
@@ -206,15 +339,15 @@ function M.show_check_failure(output)
     table.remove(lines)
   end
   if #lines == 0 then
-    lines = { "The workshop runner failed without returning output." }
+    lines = { "El verificador terminó sin devolver detalles." }
   end
-  table.insert(lines, 1, "RUST 100 · CHECK FAILED · press q to close")
+  table.insert(lines, 1, "RUST 100 · NO PASÓ · salida completa de wr · q cerrar")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  local width = math.max(1, math.min(vim.o.columns - 4, 100))
-  local height = math.max(1, math.min(#lines, 16, vim.o.lines - 2))
-  output_window = vim.api.nvim_open_win(buf, false, {
+  local width = math.max(1, math.min(vim.o.columns - 4, 112))
+  local height = math.max(1, math.min(#lines, 18, vim.o.lines - 2))
+  output_window = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     row = math.max(0, vim.o.lines - height - 3),
     col = math.max(0, math.floor((vim.o.columns - width) / 2)),
@@ -224,6 +357,10 @@ function M.show_check_failure(output)
     border = "rounded",
   })
   vim.wo[output_window].wrap = true
+  vim.wo[output_window].linebreak = true
+  vim.wo[output_window].number = false
+  vim.wo[output_window].signcolumn = "no"
+  vim.wo[output_window].winbar = "  RUST 100  ·  RESULTADO  ·  q volver"
   vim.wo[output_window].winhl = "Normal:NormalFloat,FloatBorder:DiagnosticError"
   vim.api.nvim_buf_add_highlight(buf, output_ns, "DiagnosticError", 0, 0, -1)
   vim.keymap.set("n", "q", function()

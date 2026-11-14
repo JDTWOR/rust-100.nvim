@@ -80,6 +80,82 @@ local function source_file(exercise_dir)
   return join(exercise_dir, "Cargo.toml")
 end
 
+local function rust_files(source_dir)
+  local files = vim.fn.globpath(source_dir, "*.rs", false, true)
+  local seen = {}
+  for _, file in ipairs(files) do
+    seen[file] = true
+  end
+  for _, file in ipairs(vim.fn.globpath(source_dir, "**/*.rs", false, true)) do
+    if not seen[file] then
+      files[#files + 1] = file
+      seen[file] = true
+    end
+  end
+  table.sort(files)
+  return files
+end
+
+function M.todo_markers(exercise)
+  local markers = {}
+  for _, file in ipairs(rust_files(join(exercise.dir, "src"))) do
+    local ok, lines = pcall(vim.fn.readfile, file)
+    if ok then
+      for line_number, line in ipairs(lines) do
+        local kind
+        if line:find("todo!(", 1, true) then
+          kind = "todo!"
+        elseif line:find("TODO", 1, true) then
+          kind = "TODO"
+        end
+        if kind then
+          markers[#markers + 1] = {
+            filename = file,
+            lnum = line_number,
+            col = 1,
+            text = vim.trim(line),
+            kind = kind,
+          }
+        end
+      end
+    end
+  end
+  return markers
+end
+
+function M.focus_line(exercise, markers)
+  local ok, lines = pcall(vim.fn.readfile, exercise.source)
+  if ok then
+    for line_number, line in ipairs(lines) do
+      if not line:match("^%s*//") and line:find("__", 1, true) then
+        return line_number
+      end
+    end
+  end
+  for _, marker in ipairs(markers or exercise.markers or {}) do
+    if normalize(marker.filename) == normalize(exercise.source) then
+      return marker.lnum
+    end
+  end
+  return 1
+end
+
+function M.task_summary(markers)
+  for _, marker in ipairs(markers or {}) do
+    if marker.kind == "TODO" then
+      local summary = marker.text:gsub("^%s*//%s*", ""):gsub("TODO:?%s*", "")
+      summary = vim.trim(summary)
+      if summary ~= "" then
+        return summary
+      end
+    end
+  end
+  if #markers > 0 then
+    return "Reemplaza los marcadores pendientes con una implementación."
+  end
+  return "Lee la lección y completa el ejercicio."
+end
+
 function M.load(root)
   local summary_path = join(root, "book", "src", "SUMMARY.md")
   if not stat(summary_path) then
@@ -105,7 +181,7 @@ function M.load(root)
       local manifest = join(exercise_dir, "Cargo.toml")
 
       if stat(lesson_path) and stat(manifest) then
-        exercises[#exercises + 1] = {
+        local exercise = {
           chapter = chapter,
           name = name,
           title = title or name,
@@ -114,6 +190,10 @@ function M.load(root)
           dir = exercise_dir,
           source = source_file(exercise_dir),
         }
+        exercise.markers = M.todo_markers(exercise)
+        exercise.task = M.task_summary(exercise.markers)
+        exercise.focus_line = M.focus_line(exercise, exercise.markers)
+        exercises[#exercises + 1] = exercise
       end
     end
   end

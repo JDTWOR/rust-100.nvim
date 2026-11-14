@@ -40,7 +40,7 @@ end
 local function output(result)
   local message = vim.trim((result.stderr or "") .. "\n" .. (result.stdout or ""))
   if message == "" then
-    return "The command returned no output."
+    return "El comando terminó sin mostrar detalles."
   end
   if #message > 1800 then
     return "…" .. message:sub(-1800)
@@ -80,7 +80,7 @@ function M.ensure_course(config, callback)
   end
 
   if config.auto_setup == false then
-    callback(nil, "Course not found. Enable auto_setup or configure course_root.")
+    callback(nil, "No se encontró el curso. Activa auto_setup o define course_root.")
     return
   end
 
@@ -90,19 +90,19 @@ function M.ensure_course(config, callback)
   end
 
   if vim.fn.executable("git") ~= 1 then
-    callback(nil, "Git is required to download the course automatically.")
+    callback(nil, "Se necesita Git para descargar el curso automáticamente.")
     return
   end
 
   local target_stat = vim.uv.fs_stat(target)
   if target_stat then
     if target_stat.type ~= "directory" then
-      callback(nil, "The course install path is not a directory: " .. target)
+      callback(nil, "La ruta del curso no es una carpeta: " .. target)
       return
     end
     local ok, iterator = pcall(vim.fs.dir, target)
     if not ok or iterator() ~= nil then
-      callback(nil, "The course install path already exists and is not a course checkout: " .. target)
+      callback(nil, "La carpeta de destino ya existe y no contiene el curso: " .. target)
       return
     end
   end
@@ -110,26 +110,26 @@ function M.ensure_course(config, callback)
   local parent = vim.fs.dirname(target)
   vim.fn.mkdir(parent, "p")
   if not vim.uv.fs_stat(parent) then
-    callback(nil, "Could not create the course parent directory: " .. parent)
+    callback(nil, "No se pudo crear la carpeta del curso: " .. parent)
     return
   end
 
   course_installing = true
   course_waiters = { callback }
-  notify("Downloading the official 100 Exercises course…")
+  notify("Descargando el curso oficial 100 Exercises…")
   run_process({ "git", "clone", course_url, target }, parent, function(result)
     if result.code ~= 0 then
-      complete_course(nil, "Could not download the course:\n" .. output(result))
+      complete_course(nil, "No se pudo descargar el curso:\n" .. output(result))
       return
     end
 
     local cloned_root = course.find_root(target)
     if not cloned_root then
-      complete_course(nil, "The downloaded repository does not look like a 100 Exercises checkout.")
+      complete_course(nil, "El repositorio descargado no tiene la estructura del curso 100 Exercises.")
       return
     end
 
-    notify("Course downloaded. Preparing your study dashboard…")
+    notify("Curso listo. Preparando el panel de estudio…")
     complete_course(cloned_root)
   end)
 end
@@ -184,7 +184,7 @@ function M.ensure_runner(config, callback)
   end
 
   if config.auto_setup == false then
-    callback(false, "The `wr` workshop runner is missing and automatic setup is disabled.")
+    callback(false, "Falta `wr` y la instalación automática está desactivada.")
     return
   end
 
@@ -194,7 +194,7 @@ function M.ensure_runner(config, callback)
   end
 
   if vim.fn.executable("cargo") ~= 1 then
-    callback(false, "Cargo is required to install the workshop runner automatically.")
+    callback(false, "Se necesita Cargo para instalar el verificador automáticamente.")
     return
   end
 
@@ -202,21 +202,21 @@ function M.ensure_runner(config, callback)
   local parent = data_root()
   vim.fn.mkdir(parent, "p")
   if not vim.uv.fs_stat(parent) then
-    callback(false, "Could not create the Rust 100 data directory: " .. parent)
+    callback(false, "No se pudo crear la carpeta de datos de Rust 100: " .. parent)
     return
   end
 
   runner_installing = true
   runner_waiters = { callback }
-  notify("Installing the official workshop runner in the background…")
+  notify("Instalando el verificador de ejercicios en segundo plano…")
   run_process({ "cargo", "install", "--locked", "--root", install_root, "workshop-runner" }, parent, function(result)
     if result.code == 0 and M.runner_available() then
-      notify("Workshop runner installed and ready.")
+      notify("Verificador instalado y listo.")
       complete_runner(true)
       return
     end
 
-    complete_runner(false, "Could not install the workshop runner:\n" .. output(result))
+    complete_runner(false, "No se pudo instalar el verificador:\n" .. output(result))
   end)
 end
 

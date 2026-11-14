@@ -10,6 +10,7 @@ Setup ~
 
     require("rust100").setup({
       auto_setup = true,
+      auto_check = true,
     })
 
 If `course_root` is omitted, rust100 searches upward from the current buffer
@@ -18,13 +19,21 @@ and working directory. If the checkout is not found, it clones the course to
 `stdpath("data")/rust100/toolchain`. Set `auto_setup = false` to disable these
 automatic downloads and installations.
 
+Exercises open in a full-width code buffer with the cursor placed on a code
+placeholder. The winbar shows the exercise state and available shortcuts.
+<leader>rl opens a wrapped lesson view; press q there to return to the code.
+Saving the source runs the check automatically. A passing exercise is marked
+solved, and you choose when to continue with <leader>rn. Set auto_check = false to
+run checks manually with <leader>rr or :Rust100 check. auto_check_delay is the
+save debounce in milliseconds and defaults to 700.
+
 Commands ~
 
                                                         *:Rust100*
 :Rust100                  Open the course dashboard.
-:Rust100 open [index]     Open an exercise and its Markdown lesson.
+:Rust100 open [index]     Open the exercise code at full width.
 :Rust100 lesson [index]   Open the lesson for an exercise.
-:Rust100 check            Register and check the current exercise with `wr`.
+:Rust100 check            Check the current exercise now.
 :Rust100 next             Open the next exercise.
 :Rust100 todos            Put TODO and todo!() markers in quickfix.
 :Rust100 health           Show required tools and course detection.
@@ -34,11 +43,20 @@ The optional index is one-based and follows `book/src/SUMMARY.md`.
 Dashboard keys ~
 
     j / k       Select an exercise
-    Enter       Open the selected exercise and lesson
+    Enter       Open the selected exercise
     l           Read the selected lesson
     r           Verify the selected exercise
     ?           Show dashboard key help
     q / Esc     Close the dashboard
+
+Exercise keys ~
+
+    <leader>rl  Read the lesson
+    <leader>rr  Verify the exercise
+    <leader>rt  Open TODO markers in quickfix
+    <leader>rm  Return to the course map
+    <leader>rp  Open the previous exercise
+    <leader>rn  Open the next exercise
 
 Progress ~
 

@@ -4,8 +4,11 @@ local ui = require("rust100.ui")
 local bootstrap = require("rust100.bootstrap")
 
 local M = {}
-local config = { course_root = nil, auto_setup = true }
+local config = { course_root = nil, auto_setup = true, auto_check = true, auto_check_delay = 700 }
 local check_running = false
+local open_exercise, open_lesson, check_exercise, open_dashboard, find_todos
+local auto_check_group = vim.api.nvim_create_augroup("Rust100AutoCheck", { clear = true })
+local auto_check_timers = {}
 
 local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "Rust 100" })
@@ -13,7 +16,7 @@ end
 
 local function context(root)
   if not root then
-    return nil, "Course not found."
+    return nil, "No se encontró el curso."
   end
 
   local exercises, err = course.load(root)
@@ -25,7 +28,7 @@ local function context(root)
   if is_new then
     local saved, save_error = progress.save(state, state_path)
     if not saved then
-      notify("Could not initialize course progress: " .. tostring(save_error), vim.log.levels.WARN)
+      notify("No se pudo inicializar el progreso: " .. tostring(save_error), vim.log.levels.WARN)
     end
   end
   return {
@@ -40,7 +43,7 @@ local function save(ctx)
   ctx.state.current_id = ctx.exercises[ctx.state.current].id
   local ok, err = progress.save(ctx.state, ctx.state_path)
   if not ok then
-    notify("Could not save course progress: " .. tostring(err), vim.log.levels.WARN)
+    notify("No se pudo guardar el progreso: " .. tostring(err), vim.log.levels.WARN)
   end
 end
 
@@ -49,18 +52,80 @@ local function current_index(ctx)
   return course.index_for_path(ctx.exercises, path) or ctx.state.current
 end
 
+local function schedule_auto_check(ctx, exercise, index, buf)
+  if not config.auto_check then
+    return
+  end
+
+  local existing = auto_check_timers[buf]
+  if existing then
+    existing:stop()
+    existing:close()
+  end
+
+  local timer = vim.uv.new_timer()
+  auto_check_timers[buf] = timer
+  timer:start(config.auto_check_delay, 0, vim.schedule_wrap(function()
+    if auto_check_timers[buf] ~= timer then
+      return
+    end
+    auto_check_timers[buf] = nil
+    timer:close()
+    if vim.api.nvim_buf_is_valid(buf) and not vim.bo[buf].modified then
+      exercise.markers = course.todo_markers(exercise)
+      exercise.task = course.task_summary(exercise.markers)
+      exercise.focus_line = course.focus_line(exercise, exercise.markers)
+      ui.refresh_tasks(buf, exercise)
+      check_exercise(ctx, index)
+    end
+  end))
+
+  vim.api.nvim_clear_autocmds({ group = auto_check_group, buffer = buf })
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = auto_check_group,
+    buffer = buf,
+    callback = function()
+      schedule_auto_check(ctx, exercise, index, buf)
+    end,
+    desc = "Verify the current Rust 100 exercise after saving",
+  })
+end
+
 local function open_buffers(ctx, index)
   local exercise = ctx.exercises[index]
-  vim.cmd("edit " .. vim.fn.fnameescape(exercise.source))
-  local code_window = vim.api.nvim_get_current_win()
-
-  if exercise.lesson ~= exercise.source then
-    local split = vim.o.columns < 100 and "split" or "vsplit"
-    vim.cmd("rightbelow " .. split .. " " .. vim.fn.fnameescape(exercise.lesson))
-    if vim.api.nvim_win_is_valid(code_window) then
-      vim.api.nvim_set_current_win(code_window)
-    end
+  if course.normalize(vim.api.nvim_buf_get_name(0)) ~= course.normalize(exercise.source) then
+    vim.cmd("edit " .. vim.fn.fnameescape(exercise.source))
   end
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].bufhidden = "hide"
+  ui.study_buffer(buf, exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, {
+    lesson = function()
+      open_lesson(ctx, index)
+    end,
+    check = function()
+      check_exercise(ctx, index)
+    end,
+    todos = function()
+      find_todos(ctx, index)
+    end,
+    dashboard = function()
+      open_dashboard(ctx)
+    end,
+    next = function()
+      open_exercise(ctx, index + 1)
+    end,
+    previous = function()
+      if index > 1 then
+        open_exercise(ctx, index - 1)
+      else
+        notify("Este ya es el primer ejercicio.")
+      end
+    end,
+  })
+  schedule_auto_check(ctx, exercise, index, buf)
+  local focus_line = course.focus_line(exercise, exercise.markers)
+  vim.api.nvim_win_set_cursor(0, { focus_line, 0 })
+  vim.cmd("normal! zz")
 end
 
 local function run_system(command, cwd, callback)
@@ -79,16 +144,16 @@ end
 
 local function register_exercise(ctx, exercise, callback)
   if vim.fn.executable("wr") ~= 1 then
-    callback({ code = 127, stdout = "", stderr = "The `wr` workshop runner is not installed." })
+    callback({ code = 127, stdout = "", stderr = "El verificador `wr` no está instalado." })
     return
   end
 
   run_system({ "wr", "open", "--chapter", exercise.chapter, "--exercise", exercise.name }, ctx.root, callback)
 end
 
-local function open_exercise(ctx, index)
+open_exercise = function(ctx, index)
   if not ctx.exercises[index] then
-    notify("There are no more exercises in the course.")
+    notify("No hay más ejercicios en el curso.")
     return
   end
 
@@ -96,99 +161,107 @@ local function open_exercise(ctx, index)
   save(ctx)
   local ok, err = pcall(open_buffers, ctx, index)
   if not ok then
-    notify("Could not open the exercise: " .. tostring(err), vim.log.levels.ERROR)
+    notify("No se pudo abrir el ejercicio: " .. tostring(err), vim.log.levels.ERROR)
   end
 end
 
-local function open_lesson(ctx, index)
+open_lesson = function(ctx, index)
   local exercise = ctx.exercises[index]
   if not exercise then
-    notify("There is no exercise at position " .. tostring(index) .. ".", vim.log.levels.ERROR)
+    notify("No existe un ejercicio en la posición " .. tostring(index) .. ".", vim.log.levels.ERROR)
     return
   end
 
   ctx.state.current = index
   save(ctx)
+  local ok, err = pcall(open_buffers, ctx, index)
+  if not ok then
+    notify("No se pudo preparar el ejercicio: " .. tostring(err), vim.log.levels.ERROR)
+    return
+  end
+  local code_buf = vim.api.nvim_get_current_buf()
   vim.cmd("edit " .. vim.fn.fnameescape(exercise.lesson))
+  local lesson_buf = vim.api.nvim_get_current_buf()
+  ui.lesson_buffer(lesson_buf, exercise, function()
+    if vim.api.nvim_buf_is_valid(code_buf) then
+      vim.api.nvim_set_current_buf(code_buf)
+      ui.update_study(code_buf, exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true)
+    else
+      open_exercise(ctx, index)
+    end
+  end)
 end
 
-local function show_check_error(result)
+local function show_check_error(result, ctx, exercise, index)
   local output = (result.stdout or "") .. (result.stderr or "")
   ui.show_check_failure(output)
-  notify("Check failed with exit code " .. tostring(result.code) .. ". Review the runner output.", vim.log.levels.WARN)
+  ctx.state.completed[exercise.id] = nil
+  save(ctx)
+  ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, false, "PENDIENTE")
+  ui.refresh_dashboard(ctx.state)
+  notify("Aún no pasa. Revisa la salida y vuelve a guardar.", vim.log.levels.WARN)
 end
 
 local function run_check(ctx, exercise, index)
-  local active_path = course.normalize(vim.api.nvim_buf_get_name(0))
-  local source_root = course.normalize(vim.fs.joinpath(exercise.dir, "src")) .. package.config:sub(1, 1)
-  local is_rust_source = active_path:sub(1, #source_root) == source_root and active_path:match("%.rs$") ~= nil
-  if not is_rust_source then
-    local ok, err = pcall(open_buffers, ctx, index)
-    if not ok then
-      check_running = false
-      notify("Could not open the exercise before checking: " .. tostring(err), vim.log.levels.ERROR)
-      return
-    end
-  end
-
   register_exercise(ctx, exercise, function(open_result)
     if open_result.code ~= 0 then
       check_running = false
-      show_check_error(open_result)
+      show_check_error(open_result, ctx, exercise, index)
       return
     end
 
     run_system({ "wr", "check" }, exercise.dir, function(result)
       check_running = false
       if result.code ~= 0 then
-        show_check_error(result)
+        show_check_error(result, ctx, exercise, index)
         return
       end
 
       ctx.state.completed[exercise.id] = true
-      local next_index = index + 1
-      if ctx.exercises[next_index] then
-        ctx.state.current = next_index
-        save(ctx)
-        notify("Exercise solved. Opening the next lesson.", vim.log.levels.INFO)
-        open_exercise(ctx, next_index)
-      else
-        ctx.state.current = index
-        save(ctx)
-        notify("All course exercises are complete. Nice work!", vim.log.levels.INFO)
-      end
+      ctx.state.current = index
+      save(ctx)
+      ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, true)
+      ui.refresh_dashboard(ctx.state)
+      notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
     end)
   end)
 end
 
-local function check_exercise(ctx, index)
+check_exercise = function(ctx, index)
   local exercise = ctx.exercises[index]
   if not exercise then
-    notify("There is no exercise at position " .. tostring(index) .. ".", vim.log.levels.ERROR)
+    notify("No existe un ejercicio en la posición " .. tostring(index) .. ".", vim.log.levels.ERROR)
     return
   end
   if check_running then
-    notify("A course check is already running.", vim.log.levels.WARN)
+    notify("Ya hay una comprobación en curso.", vim.log.levels.WARN)
     return
   end
 
   check_running = true
   ctx.state.current = index
   save(ctx)
-  notify("Preparing to verify " .. exercise.chapter .. "/" .. exercise.name .. "…")
+  ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "PREPARANDO")
+  notify("Preparando la comprobación de " .. exercise.chapter .. "/" .. exercise.name .. "…")
   bootstrap.ensure_runner(config, function(ready, err)
     if not ready then
       check_running = false
+      ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "PENDIENTE")
       notify(err, vim.log.levels.ERROR)
       return
     end
-    notify("Verifying " .. exercise.chapter .. "/" .. exercise.name .. "…")
+    ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "VERIFICANDO")
+    notify("Comprobando " .. exercise.chapter .. "/" .. exercise.name .. "…")
     run_check(ctx, exercise, index)
   end)
 end
 
-local function open_dashboard(ctx)
+open_dashboard = function(ctx)
   ui.dashboard(ctx.exercises, ctx.state, {
+    select = function(index)
+      ctx.state.current = index
+      save(ctx)
+    end,
     open = function(index)
       open_exercise(ctx, index)
     end,
@@ -201,45 +274,32 @@ local function open_dashboard(ctx)
   })
 end
 
-local function find_todos(ctx, index)
+find_todos = function(ctx, index)
   local exercise = ctx.exercises[index]
   if not exercise then
-    notify("There is no exercise at position " .. tostring(index) .. ".", vim.log.levels.ERROR)
+    notify("No existe un ejercicio en la posición " .. tostring(index) .. ".", vim.log.levels.ERROR)
     return
   end
 
-  local source_dir = vim.fs.joinpath(exercise.dir, "src")
-  local files = vim.fn.globpath(source_dir, "*.rs", false, true)
-  local seen = {}
-  for _, file in ipairs(files) do
-    seen[file] = true
-  end
-  for _, file in ipairs(vim.fn.globpath(source_dir, "**/*.rs", false, true)) do
-    if not seen[file] then
-      files[#files + 1] = file
-      seen[file] = true
-    end
-  end
+  exercise.markers = course.todo_markers(exercise)
+  exercise.task = course.task_summary(exercise.markers)
+  exercise.focus_line = course.focus_line(exercise, exercise.markers)
   local items = {}
-  for _, file in ipairs(files) do
-    for line_number, line in ipairs(vim.fn.readfile(file)) do
-      if line:find("TODO", 1, true) or line:find("todo!(", 1, true) then
-        items[#items + 1] = {
-          filename = file,
-          lnum = line_number,
-          col = 1,
-          text = vim.trim(line),
-        }
-      end
-    end
+  for _, marker in ipairs(exercise.markers or {}) do
+    items[#items + 1] = {
+      filename = marker.filename,
+      lnum = marker.lnum,
+      col = marker.col,
+      text = marker.text,
+    }
   end
 
   vim.fn.setqflist({}, " ", {
-    title = "Rust 100 TODOs · " .. exercise.chapter .. "/" .. exercise.name,
+    title = "Tareas pendientes · " .. exercise.chapter .. "/" .. exercise.name,
     items = items,
   })
   if #items == 0 then
-    notify("No TODO markers found in this exercise.")
+    notify("Este ejercicio no tiene marcadores TODO.")
     return
   end
   vim.cmd("copen")
@@ -250,29 +310,31 @@ function M.setup(opts)
 end
 
 function M.health()
-  local lines = { "Rust 100 health" }
+  local lines = { "Estado de Rust 100" }
   for _, command in ipairs({ "git", "cargo", "rustc" }) do
-    local status = vim.fn.executable(command) == 1 and "available" or "missing"
+    local status = vim.fn.executable(command) == 1 and "disponible" or "falta"
     lines[#lines + 1] = string.format("%s: %s", command, status)
   end
-  local runner_status = "missing"
+  local runner_status
   if bootstrap.runner_available() then
-    runner_status = "available"
+    runner_status = "disponible"
   elseif config.auto_setup and vim.fn.executable("cargo") == 1 and vim.fn.executable("rustc") == 1 then
-    runner_status = "will install automatically"
+    runner_status = "se instalará automáticamente"
+  else
+    runner_status = "falta"
   end
   lines[#lines + 1] = string.format("wr: %s", runner_status)
-  lines[#lines + 1] = string.format("rust-analyzer: %s (optional)", vim.fn.executable("rust-analyzer") == 1 and "available" or "missing")
+  lines[#lines + 1] = string.format("rust-analyzer: %s (opcional)", vim.fn.executable("rust-analyzer") == 1 and "disponible" or "falta")
 
   local root, target = bootstrap.course_target(config)
   if root then
-    lines[#lines + 1] = "course: " .. root
+    lines[#lines + 1] = "curso: " .. root
   elseif config.auto_setup then
-    lines[#lines + 1] = "course: will download to " .. target
+    lines[#lines + 1] = "curso: se descargará en " .. target
   else
-    lines[#lines + 1] = "course: not found"
+    lines[#lines + 1] = "curso: no encontrado"
   end
-  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Rust 100 health" })
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Rust 100" })
 end
 
 local function dispatch(ctx, args)
@@ -291,7 +353,7 @@ local function dispatch(ctx, args)
   elseif action == "todos" then
     find_todos(ctx, index)
   else
-    notify("Unknown action. Use :Rust100 with no arguments to open the course panel.", vim.log.levels.ERROR)
+    notify("Acción desconocida. Ejecuta :Rust100 para abrir el curso.", vim.log.levels.ERROR)
   end
 end
 
@@ -305,7 +367,7 @@ function M.command(args)
 
   local supported = { dashboard = true, list = true, open = true, lesson = true, check = true, next = true, todos = true }
   if not supported[action] then
-    notify("Unknown action. Use :Rust100 with no arguments to open the course panel.", vim.log.levels.ERROR)
+    notify("Acción desconocida. Ejecuta :Rust100 para abrir el curso.", vim.log.levels.ERROR)
     return
   end
 

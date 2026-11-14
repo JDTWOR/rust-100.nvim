@@ -35,11 +35,11 @@ El plugin debe sentirse integrado con Neovim, ser claro en terminales pequeñas 
 ## Recorrido propuesto
 
 1. `:Rust100` abre el panel, detecta un checkout o clona el curso; también instala `wr` en segundo plano si hace falta.
-2. El panel muestra capítulo, ejercicio actual, avance y acciones disponibles.
-3. Abrir el ejercicio prepara una vista de código y una vista Markdown de la lección.
+2. El panel muestra capítulo, ejercicio actual, consigna breve, avance y acciones disponibles.
+3. Abrir el ejercicio muestra el código a ancho completo; la lección tiene una vista de lectura independiente.
 4. La búsqueda de tareas lleva los `TODO` y `todo!()` a quickfix.
 5. `:Rust100 check` ejecuta `wr` de forma asíncrona y presenta la salida en Neovim.
-6. Si la verificación permite avanzar, el plugin abre la siguiente lección y su ejercicio.
+6. Si la verificación pasa, el plugin marca el ejercicio y espera a que el usuario avance.
 
 La fase técnica determinará el comando y el formato de estado fiables para consultar el progreso de `wr`; no se asumirá una API que el runner no documente.
 
@@ -116,6 +116,7 @@ Este hito valida la integración principal antes de invertir tiempo en un dashbo
 - La ejecución no bloquea el editor.
 - Los comandos funcionan desde la raíz del curso y desde un archivo de ejercicio.
 - La interfaz se entiende sin iconos especiales y con temas claros u oscuros.
+- Guardar un ejercicio lo verifica automáticamente y una aprobación no cambia de ejercicio sin una acción explícita.
 - El contenido upstream conserva su atribución y no se copia al repositorio del plugin.
 
 ## Riesgos y decisiones abiertas
