@@ -221,7 +221,21 @@ end
 
 local function study_winbar(exercise, index, total, completed, status)
   status = status or (completed and "✓ RESUELTO · <leader>rn" or "PENDIENTE")
-  return string.format("  RUST 100  ·  %s / %s  ·  EJERCICIO %d DE %d  ·  %s", exercise.chapter, exercise.name, index, total, status)
+  local state_group = completed and "DiagnosticOk" or "DiagnosticWarn"
+  if status:find("FALLÓ", 1, true) or status:find("ERROR", 1, true) then
+    state_group = "DiagnosticError"
+  elseif status == "VERIFICANDO" or status == "CAMBIOS EN COLA" or status == "GUARDADO · ESPERANDO" then
+    state_group = "DiagnosticInfo"
+  end
+  return string.format(
+    "%%#Title#  RUST 100%%#Comment#  ·  %s / %s  ·  %%#Special#EJERCICIO %d DE %d%%#Comment#  ·  %%#%s#%s%%*",
+    exercise.chapter,
+    exercise.name,
+    index,
+    total,
+    state_group,
+    status
+  )
 end
 
 local function mark_tasks(buf, exercise)
