@@ -4,6 +4,8 @@ local dashboard_ns = vim.api.nvim_create_namespace("rust100.dashboard")
 local output_ns = vim.api.nvim_create_namespace("rust100.check-output")
 local exercise_ns = vim.api.nvim_create_namespace("rust100.exercise-tasks")
 local output_window
+local output_text
+local output_full = false
 local dashboard_views = {}
 
 local function close_window(window)
@@ -41,7 +43,7 @@ local function dashboard_lines(exercises, state, selected, panel_width, panel_he
     string.format("  AVANCE   %d / %d resueltos", completed, total),
     "  " .. progress_bar(completed, total, math.min(34, math.max(8, panel_width - 12))),
     "",
-    "  EJERCICIO ACTUAL",
+    string.format("  EJERCICIO %d DE %d", selected, total),
     "  " .. truncate(chosen.title, math.max(12, panel_width - 4)),
     "  " .. chosen.chapter .. " / " .. chosen.name,
     "  Tarea: " .. truncate(chosen.task or "Lee la lección y completa el ejercicio.", math.max(12, panel_width - 12)),
@@ -219,7 +221,7 @@ end
 
 local function study_winbar(exercise, index, total, completed, status)
   status = status or (completed and "RESUELTO" or "PENDIENTE")
-  return string.format("  RUST 100  ·  %s / %s  ·  %d/%d  ·  %s", exercise.chapter, exercise.name, index, total, status)
+  return string.format("  RUST 100  ·  %s / %s  ·  EJERCICIO %d DE %d  ·  %s", exercise.chapter, exercise.name, index, total, status)
 end
 
 local function mark_tasks(buf, exercise)
@@ -254,6 +256,7 @@ function M.study_buffer(buf, exercise, index, total, completed, handlers)
   vim.keymap.set("n", "<leader>rr", handlers.check, vim.tbl_extend("force", opts, { desc = "Comprobar ejercicio" }))
   vim.keymap.set("n", "<leader>rt", handlers.todos, vim.tbl_extend("force", opts, { desc = "Buscar tareas pendientes" }))
   vim.keymap.set("n", "<leader>rm", handlers.dashboard, vim.tbl_extend("force", opts, { desc = "Mapa del curso" }))
+  vim.keymap.set("n", "<leader>ro", handlers.output, vim.tbl_extend("force", opts, { desc = "Ver resultado de comprobación" }))
   vim.keymap.set("n", "<leader>rn", handlers.next, vim.tbl_extend("force", opts, { desc = "Siguiente ejercicio" }))
   vim.keymap.set("n", "<leader>rp", handlers.previous, vim.tbl_extend("force", opts, { desc = "Ejercicio anterior" }))
 end
@@ -291,8 +294,46 @@ function M.lesson_buffer(buf, exercise, on_return)
   vim.keymap.set("n", "<leader>rm", on_return, { buffer = buf, silent = true, desc = "Volver al ejercicio" })
 end
 
-function M.show_check_failure(output)
+local function clean_output(output)
+  return (output or ""):gsub("\27%[[%d;]*[A-Za-z]", "")
+end
+
+local function failure_summary(output)
+  local cleaned = clean_output(output)
+  local message = cleaned:match("(error%[E%d+%]: [^\r\n]+)")
+    or cleaned:match("(error: [^\r\n]+)")
+    or cleaned:match("(test result: FAILED[^\r\n]*)")
+    or cleaned:match("([%w_:]+%.%.%. FAILED)")
+    or "La comprobación no pasó."
+  local location = cleaned:match("%-%-> ([^\r\n]+)")
+  if location then
+    location = location:gsub("^.-/exercises/", "")
+  end
+  local lines = { message }
+  if location then
+    lines[#lines + 1] = location
+  end
+  return lines
+end
+
+function M.failure_label(output)
+  local summary = failure_summary(output)[1]
+  local code = summary:match("error%[(E%d+)%]")
+  if code then
+    return code
+  end
+  return vim.fn.strcharpart(summary, 0, 28)
+end
+
+function M.close_check_output()
   close_window(output_window)
+  output_window = nil
+  output_text = nil
+  output_full = false
+end
+
+function M.show_check_failure(output)
+  M.close_check_output()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, "rust100://check/" .. buf)
   vim.bo[buf].buftype = "nofile"
@@ -300,18 +341,32 @@ function M.show_check_failure(output)
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "text"
 
-  output = (output or ""):gsub("\27%[[%d;]*[A-Za-z]", "")
-  local lines = vim.split(output, "\n", { plain = true })
-  while #lines > 0 and lines[#lines] == "" do
-    table.remove(lines)
+  output_text = clean_output(output)
+  local summary = failure_summary(output_text)
+  local function render(full)
+    local lines
+    if full then
+      lines = vim.split(output_text, "\n", { plain = true })
+      while #lines > 0 and lines[#lines] == "" do
+        table.remove(lines)
+      end
+      if #lines == 0 then
+        lines = { "El verificador terminó sin devolver detalles." }
+      end
+      table.insert(lines, 1, "SALIDA COMPLETA · pulsa d para volver al resumen")
+    else
+      lines = vim.deepcopy(summary)
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = "Pulsa d para ver la salida completa de wr."
+    end
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
   end
-  if #lines == 0 then
-    lines = { "El verificador terminó sin devolver detalles." }
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  render(false)
   vim.bo[buf].modifiable = false
 
-  local height = math.max(1, math.min(math.max(#lines, 5), 14, vim.o.lines - 5))
+  local height = math.max(1, math.min(8, vim.o.lines - 5))
   vim.cmd("botright " .. height .. "split")
   output_window = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(output_window, buf)
@@ -319,11 +374,14 @@ function M.show_check_failure(output)
   vim.wo[output_window].linebreak = true
   vim.wo[output_window].number = false
   vim.wo[output_window].signcolumn = "no"
-  vim.wo[output_window].winbar = "  RUST 100  ·  COMPROBACIÓN FALLIDA  ·  q cerrar"
+  vim.wo[output_window].winbar = "  RUST 100  ·  COMPROBACIÓN FALLIDA  ·  d detalle  ·  q cerrar"
   vim.api.nvim_buf_add_highlight(buf, output_ns, "DiagnosticError", 0, 0, -1)
+  vim.keymap.set("n", "d", function()
+    output_full = not output_full
+    render(output_full)
+  end, { buffer = buf, silent = true, nowait = true, desc = "Alternar salida completa" })
   vim.keymap.set("n", "q", function()
-    close_window(output_window)
-    output_window = nil
+    M.close_check_output()
   end, { buffer = buf, silent = true, nowait = true })
 end
 

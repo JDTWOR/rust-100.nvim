@@ -27,6 +27,11 @@ solved, and you choose when to continue with <leader>rn. Set auto_check = false 
 run checks manually with <leader>rr or :Rust100 check. auto_check_delay is the
 save debounce in milliseconds and defaults to 700.
 
+Automatic checks do not open a result window. A failed check appears in the
+exercise winbar; <leader>ro opens a concise summary and d toggles the complete
+runner output. Saving during a running check discards its stale result and
+checks the latest saved version. Manual checks require a saved source buffer.
+
 Commands ~
 
                                                         *:Rust100*
@@ -53,6 +58,7 @@ Exercise keys ~
 
     <leader>rl  Read the lesson
     <leader>rr  Verify the exercise
+    <leader>ro  Show the latest check result
     <leader>rt  Open TODO markers in quickfix
     <leader>rm  Return to the course map
     <leader>rp  Open the previous exercise

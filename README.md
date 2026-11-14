@@ -41,7 +41,9 @@ return {
 
 On the first `:Rust100` command, the plugin searches the current buffer and working directory for a course checkout. If none is found, it clones the official repository to `stdpath("data")/rust100/course`. It installs `wr` into `stdpath("data")/rust100/toolchain` in the background using Cargo. Set `course_root` to choose a different checkout location. Set `auto_setup = false` to disable downloads and installation.
 
-Opening an exercise shows the Rust source at full width and places the cursor on its first code placeholder. The winbar lists the exercise status and shortcuts. Press `<leader>rl` to read the lesson in a wrapped reading view, then `q` to return to the code. Saving the exercise runs its check automatically after a short debounce; the default `auto_check_delay` is 700 milliseconds. A passing result marks the exercise solved and waits for you to move on with `<leader>rn`. Set `auto_check = false` to run checks manually with `<leader>rr` or `:Rust100 check`.
+Opening an exercise shows the Rust source at full width and places the cursor on its first code placeholder. The winbar shows the exercise number, course position, and state. Press `<leader>rl` to read the lesson in a wrapped reading view, then `q` to return to the code. Saving runs a check silently after a short debounce; the default `auto_check_delay` is 700 milliseconds. If you save again while a check is running, its stale result is discarded and the latest saved version is checked. A passing result marks the exercise solved and waits for you to move on with `<leader>rn`.
+
+Automatic failures keep focus in the code and show the failed state in the winbar. Press `<leader>ro` to open a concise error summary, then `d` to toggle the runner's full output. Manual checks with `<leader>rr` or `:Rust100 check` open the same summary. Save the file before starting a manual check. Set `auto_check = false` to disable checks on save.
 
 ## Commands
 
@@ -55,7 +57,7 @@ Opening an exercise shows the Rust source at full width and places the cursor on
 | `:Rust100 todos` | Add `TODO` and `todo!()` markers to quickfix |
 | `:Rust100 health` | Show tool and course availability |
 
-Exercise indexes follow the order in the course's `book/src/SUMMARY.md` and start at 1. The dashboard lets you browse with `j`/`k`, open with `Enter`, read the lesson with `l`, verify with `r`, and close with `q`. In an exercise, `<leader>rp` and `<leader>rn` move backward and forward. `<leader>rl` reads the lesson, `<leader>rr` checks now, `<leader>rt` opens TODO quickfix, and `<leader>rm` returns to the course map. By default, saving the exercise runs the same check automatically; a passing result marks it solved and waits for `<leader>rn`.
+Exercise indexes follow the order in the course's `book/src/SUMMARY.md` and start at 1. The dashboard lets you browse with `j`/`k`, open with `Enter`, read the lesson with `l`, verify with `r`, and close with `q`. In an exercise, `<leader>rp` and `<leader>rn` move backward and forward. `<leader>rl` reads the lesson, `<leader>rr` checks now, `<leader>ro` opens the latest result, `<leader>rt` opens TODO quickfix, and `<leader>rm` returns to the course map.
 
 The plugin stores its dashboard cursor and checkmarks under `stdpath("state")/rust100/`. Exercises checked through the plugin also update `wr`'s official progress database. If `wr` is used directly for other exercises, the dashboard's local checkmarks do not automatically sync with that database.
 

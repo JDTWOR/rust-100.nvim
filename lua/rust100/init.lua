@@ -5,7 +5,12 @@ local bootstrap = require("rust100.bootstrap")
 
 local M = {}
 local config = { course_root = nil, auto_setup = true, auto_check = true, auto_check_delay = 700 }
-local check_running = false
+local active_check
+local pending_auto_checks = {}
+local auto_check_sequence = 0
+local save_versions = {}
+local check_outputs = {}
+local auto_check_bindings = {}
 local open_exercise, open_lesson, check_exercise, open_dashboard, find_todos
 local auto_check_group = vim.api.nvim_create_augroup("Rust100AutoCheck", { clear = true })
 local auto_check_timers = {}
@@ -52,7 +57,7 @@ local function current_index(ctx)
   return course.index_for_path(ctx.exercises, path) or ctx.state.current
 end
 
-local function schedule_auto_check(ctx, exercise, index, buf)
+local function schedule_auto_check(ctx, exercise, index, buf, version)
   if not config.auto_check then
     return
   end
@@ -71,23 +76,57 @@ local function schedule_auto_check(ctx, exercise, index, buf)
     end
     auto_check_timers[buf] = nil
     timer:close()
-    if vim.api.nvim_buf_is_valid(buf) and not vim.bo[buf].modified then
+    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified then
+      ui.update_study(buf, exercise, index, #ctx.exercises, false, "CAMBIOS SIN GUARDAR")
+      return
+    end
+    if vim.api.nvim_buf_is_valid(buf) then
       exercise.markers = course.todo_markers(exercise)
       exercise.task = course.task_summary(exercise.markers)
       exercise.focus_line = course.focus_line(exercise, exercise.markers)
       ui.refresh_tasks(buf, exercise)
-      check_exercise(ctx, index)
+      check_exercise(ctx, index, { automatic = true, buf = buf, version = version })
     end
   end))
+end
 
-  vim.api.nvim_clear_autocmds({ group = auto_check_group, buffer = buf })
+local function setup_auto_check(ctx, exercise, index, buf)
+  auto_check_bindings[buf] = { ctx = ctx, exercise = exercise, index = index }
+  if vim.api.nvim_get_autocmds({ group = auto_check_group, buffer = buf, event = "BufWritePost" })[1] then
+    return
+  end
+
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = auto_check_group,
     buffer = buf,
     callback = function()
-      schedule_auto_check(ctx, exercise, index, buf)
+      save_versions[buf] = (save_versions[buf] or 0) + 1
+      local binding = auto_check_bindings[buf]
+      if binding and config.auto_check then
+        ui.update_study(buf, binding.exercise, binding.index, #binding.ctx.exercises, binding.ctx.state.completed[binding.exercise.id] == true, "GUARDADO · ESPERANDO")
+      end
+      if binding then
+        schedule_auto_check(binding.ctx, binding.exercise, binding.index, buf, save_versions[buf])
+      end
     end,
     desc = "Verify the current Rust 100 exercise after saving",
+  })
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = auto_check_group,
+    buffer = buf,
+    once = true,
+    callback = function()
+      local timer = auto_check_timers[buf]
+      if timer then
+        timer:stop()
+        timer:close()
+      end
+      auto_check_timers[buf] = nil
+      save_versions[buf] = nil
+      pending_auto_checks[buf] = nil
+      check_outputs[buf] = nil
+      auto_check_bindings[buf] = nil
+    end,
   })
 end
 
@@ -108,6 +147,14 @@ local function open_buffers(ctx, index)
     todos = function()
       find_todos(ctx, index)
     end,
+    output = function()
+      local output = check_outputs[buf]
+      if output then
+        ui.show_check_failure(output)
+      else
+        notify("Todavía no hay un resultado de comprobación para este ejercicio.")
+      end
+    end,
     dashboard = function()
       open_dashboard(ctx)
     end,
@@ -122,7 +169,10 @@ local function open_buffers(ctx, index)
       end
     end,
   })
-  schedule_auto_check(ctx, exercise, index, buf)
+  setup_auto_check(ctx, exercise, index, buf)
+  if check_outputs[buf] then
+    ui.update_study(buf, exercise, index, #ctx.exercises, false, "FALLÓ · " .. ui.failure_label(check_outputs[buf]) .. " · <leader>ro")
+  end
   local focus_line = course.focus_line(exercise, exercise.markers)
   vim.api.nvim_win_set_cursor(0, { focus_line, 0 })
   vim.cmd("normal! zz")
@@ -192,68 +242,191 @@ open_lesson = function(ctx, index)
   end)
 end
 
-local function show_check_error(result, ctx, exercise, index)
-  local output = (result.stdout or "") .. (result.stderr or "")
-  ui.show_check_failure(output)
-  ctx.state.completed[exercise.id] = nil
-  save(ctx)
-  ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, false, "PENDIENTE")
-  ui.refresh_dashboard(ctx.state)
-  notify("Aún no pasa. Revisa la salida y vuelve a guardar.", vim.log.levels.WARN)
+local start_check
+
+local function request_is_stale(request)
+  if not request.buf then
+    local loaded_buf = vim.fn.bufnr(request.exercise.source)
+    if loaded_buf < 1 then
+      return false
+    end
+    request.buf = loaded_buf
+  end
+  return not vim.api.nvim_buf_is_valid(request.buf)
+    or vim.bo[request.buf].modified
+    or (save_versions[request.buf] or 0) > (request.version or 0)
 end
 
-local function run_check(ctx, exercise, index)
+local function next_pending_check()
+  local chosen_buf, chosen
+  for buf, request in pairs(pending_auto_checks) do
+    if not chosen or request.sequence < chosen.sequence then
+      chosen_buf, chosen = buf, request
+    end
+  end
+  if chosen_buf then
+    pending_auto_checks[chosen_buf] = nil
+  end
+  return chosen
+end
+
+local function finish_check(request)
+  if active_check ~= request then
+    return
+  end
+  active_check = nil
+  local pending = next_pending_check()
+  if pending then
+    start_check(pending)
+  end
+end
+
+local function discard_stale_check(request)
+  if request.buf and vim.api.nvim_buf_is_valid(request.buf) and vim.bo[request.buf].modified then
+    ui.update_study(request.buf, request.exercise, request.index, #request.ctx.exercises, false, "CAMBIOS SIN GUARDAR")
+  end
+  finish_check(request)
+end
+
+local function show_check_error(result, request)
+  local ctx, exercise, index = request.ctx, request.exercise, request.index
+  local output = (result.stdout or "") .. (result.stderr or "")
+  local buf = request.buf or vim.fn.bufnr(exercise.source)
+  if buf > 0 then
+    check_outputs[buf] = output
+  end
+  ctx.state.completed[exercise.id] = nil
+  save(ctx)
+  local status = request.automatic and ("FALLÓ · " .. ui.failure_label(output) .. " · <leader>ro") or "FALLÓ"
+  ui.update_study(buf, exercise, index, #ctx.exercises, false, status)
+  ui.refresh_dashboard(ctx.state)
+  if not request.automatic then
+    ui.show_check_failure(output)
+    notify("La comprobación falló. El panel muestra el resumen; pulsa d para ver toda la salida.", vim.log.levels.WARN)
+  end
+end
+
+local function run_check(request)
+  local ctx, exercise, index = request.ctx, request.exercise, request.index
   register_exercise(ctx, exercise, function(open_result)
+    if request_is_stale(request) then
+      discard_stale_check(request)
+      return
+    end
     if open_result.code ~= 0 then
-      check_running = false
-      show_check_error(open_result, ctx, exercise, index)
+      show_check_error(open_result, request)
+      finish_check(request)
       return
     end
 
     run_system({ "wr", "check" }, exercise.dir, function(result)
-      check_running = false
+      if request_is_stale(request) then
+        discard_stale_check(request)
+        return
+      end
       if result.code ~= 0 then
-        show_check_error(result, ctx, exercise, index)
+        show_check_error(result, request)
+        finish_check(request)
         return
       end
 
       ctx.state.completed[exercise.id] = true
-      ctx.state.current = index
       save(ctx)
-      ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, true)
+      local buf = request.buf or vim.fn.bufnr(exercise.source)
+      if buf > 0 then
+        check_outputs[buf] = nil
+      end
+      ui.close_check_output()
+      ui.update_study(buf, exercise, index, #ctx.exercises, true, "RESUELTO")
       ui.refresh_dashboard(ctx.state)
-      notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
+      if not request.automatic then
+        notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
+      end
+      finish_check(request)
     end)
   end)
 end
 
-check_exercise = function(ctx, index)
+start_check = function(request)
+  active_check = request
+  local ctx, exercise, index = request.ctx, request.exercise, request.index
+  if request.buf and vim.api.nvim_buf_is_valid(request.buf) then
+    ui.update_study(request.buf, exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "VERIFICANDO")
+  end
+  if not request.automatic then
+    notify("Comprobando " .. exercise.chapter .. "/" .. exercise.name .. "…")
+  end
+
+  bootstrap.ensure_runner(config, function(ready, err)
+    if active_check ~= request then
+      return
+    end
+    if request_is_stale(request) then
+      discard_stale_check(request)
+      return
+    end
+    if not ready then
+      if request.automatic and request.buf then
+        check_outputs[request.buf] = err or "No se pudo preparar el verificador."
+        ui.update_study(request.buf, exercise, index, #ctx.exercises, false, "ERROR DE PREPARACIÓN · <leader>ro")
+      else
+        ui.update_study(request.buf, exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "PENDIENTE")
+      end
+      if not request.automatic then
+        notify(err, vim.log.levels.ERROR)
+      end
+      finish_check(request)
+      return
+    end
+    run_check(request)
+  end)
+end
+
+check_exercise = function(ctx, index, options)
+  options = options or {}
   local exercise = ctx.exercises[index]
   if not exercise then
     notify("No existe un ejercicio en la posición " .. tostring(index) .. ".", vim.log.levels.ERROR)
     return
   end
-  if check_running then
-    notify("Ya hay una comprobación en curso.", vim.log.levels.WARN)
-    return
-  end
 
-  check_running = true
-  ctx.state.current = index
-  save(ctx)
-  ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "PREPARANDO")
-  notify("Preparando la comprobación de " .. exercise.chapter .. "/" .. exercise.name .. "…")
-  bootstrap.ensure_runner(config, function(ready, err)
-    if not ready then
-      check_running = false
-      ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "PENDIENTE")
-      notify(err, vim.log.levels.ERROR)
+  local buf = options.buf or vim.fn.bufnr(exercise.source)
+  if buf < 1 then
+    buf = nil
+  end
+  if buf then
+    setup_auto_check(ctx, exercise, index, buf)
+  end
+  local request = {
+    ctx = ctx,
+    exercise = exercise,
+    index = index,
+    automatic = options.automatic == true,
+    buf = buf,
+    version = options.version or (buf and save_versions[buf]) or 0,
+  }
+
+  if request.automatic then
+    if active_check then
+      auto_check_sequence = auto_check_sequence + 1
+      request.sequence = auto_check_sequence
+      pending_auto_checks[buf] = request
+      ui.update_study(buf, exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "CAMBIOS EN COLA")
       return
     end
-    ui.update_study(vim.fn.bufnr(exercise.source), exercise, index, #ctx.exercises, ctx.state.completed[exercise.id] == true, "VERIFICANDO")
-    notify("Comprobando " .. exercise.chapter .. "/" .. exercise.name .. "…")
-    run_check(ctx, exercise, index)
-  end)
+  elseif active_check then
+    notify("Ya hay una comprobación en curso.", vim.log.levels.WARN)
+    return
+  else
+    if buf and vim.bo[buf].modified then
+      notify("Guarda el archivo antes de comprobar el ejercicio.", vim.log.levels.WARN)
+      return
+    end
+    ctx.state.current = index
+    save(ctx)
+  end
+
+  start_check(request)
 end
 
 open_dashboard = function(ctx)

@@ -12,7 +12,7 @@ Una interfaz de terminal tranquila, con jerarquía tipográfica clara y los colo
   AVANCE   18 / 98 resueltos
   ━━━━━━━━━━━━──────────────────────────────────────
 
-  EJERCICIO ACTUAL
+  EJERCICIO 5 DE 98
   03_ticket_v1 / 06_ownership
   Tarea: completa los métodos de ownership.
 
@@ -34,8 +34,9 @@ La cantidad total se calcula desde el índice del curso, no se fija en `100`, po
 - Código del ejercicio a ancho completo, con el cursor en el primer marcador de código.
 - El winbar muestra ejercicio, avance y acciones disponibles.
 - La lección Markdown abre en una vista de lectura con ajuste de línea y vuelve al código con `q`.
-- Guardar el código verifica el ejercicio automáticamente; se puede desactivar en la configuración.
-- Si falla, la salida completa se abre en una división inferior y el código queda visible; `q` cierra el resultado.
+- Guardar verifica en segundo plano sin mover el foco; los resultados de versiones antiguas se descartan.
+- Un fallo automático queda en la winbar y abre el resumen solo cuando se solicita.
+- Un fallo manual muestra primero el diagnóstico breve; `d` alterna la salida completa y `q` cierra el panel.
 - Si pasa, el panel marca el ejercicio como resuelto y el usuario elige cuándo avanzar.
 
 ## Estados
