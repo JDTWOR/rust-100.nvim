@@ -42,8 +42,10 @@ Commands ~
 :Rust100 next             Open the next exercise.
 :Rust100 todos            Put TODO and todo!() markers in quickfix.
 :Rust100 health           Show required tools and course detection.
+:RustBackend              Open the backend course configured by backend_course_root.
 
 The optional index is one-based and follows `book/src/SUMMARY.md`.
+RustBackend reads a local `course.json` manifest and uses each exercise's check command.
 
 Dashboard keys ~
 

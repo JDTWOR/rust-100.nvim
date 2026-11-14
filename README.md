@@ -56,8 +56,11 @@ Automatic failures keep focus in the code and show the failed state in the winba
 | `:Rust100 next` | Open the next exercise |
 | `:Rust100 todos` | Add `TODO` and `todo!()` markers to quickfix |
 | `:Rust100 health` | Show tool and course availability |
+| `:RustBackend` | Open a local course described by `course.json` |
 
 Exercise indexes follow the order in the course's `book/src/SUMMARY.md` and start at 1. The dashboard lets you browse with `j`/`k`, open with `Enter`, read the lesson with `l`, verify with `r`, and close with `q`. In an exercise, `<leader>rp` and `<leader>rn` move backward and forward. `<leader>rl` reads the lesson, `<leader>rr` checks now, `<leader>ro` opens the latest result, `<leader>rt` opens TODO quickfix, and `<leader>rm` returns to the course map.
+
+`:RustBackend` uses `backend_course_root` from setup (or `stdpath("data")/rust100/backend-course`). Its `course.json` manifest provides lesson/source paths and a per-exercise argv check command. This lets independent courses use their own runner while the original `:Rust100` flow continues to use `wr`.
 
 The plugin stores its dashboard cursor and checkmarks under `stdpath("state")/rust100/`. Exercises checked through the plugin also update `wr`'s official progress database. If `wr` is used directly for other exercises, the dashboard's local checkmarks do not automatically sync with that database.
 

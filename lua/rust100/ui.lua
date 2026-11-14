@@ -26,7 +26,7 @@ local function truncate(value, width)
   return vim.fn.strcharpart(value, 0, math.max(1, width - 1)) .. "…"
 end
 
-local function dashboard_lines(exercises, state, selected, panel_width, panel_height)
+local function dashboard_lines(exercises, state, selected, panel_width, panel_height, course_title)
   local total = #exercises
   local completed = require("rust100.state").completed_count(state, exercises)
   local compact = panel_height < 20 or panel_width < 78
@@ -34,7 +34,7 @@ local function dashboard_lines(exercises, state, selected, panel_width, panel_he
   local visible = math.max(1, math.min(total, 7, panel_height - reserved))
   local start_index = math.max(1, math.min(total - visible + 1, selected - math.floor((visible - 1) / 2)))
   local chosen = exercises[selected]
-  local header = compact and "  RUST 100 · TALLER DE RUST" or "  RUST 100                                                   TALLER DE RUST"
+  local header = compact and ("  " .. course_title:upper()) or ("  " .. course_title:upper() .. "                                                   TALLER DE RUST")
   local lines = {
     "",
     truncate(header, panel_width - 4),
@@ -79,6 +79,7 @@ end
 
 function M.dashboard(exercises, state, handlers)
   local selected = math.max(1, math.min(#exercises, state.current or 1))
+  local course_title = exercises[1].course_title or "Rust 100"
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, "rust100://dashboard")
   vim.bo[buf].buftype = "nofile"
@@ -113,7 +114,7 @@ function M.dashboard(exercises, state, handlers)
       return
     end
 
-    local lines, selected_line, map_line, first_item_line, item_lines = dashboard_lines(exercises, state, selected, width, height)
+    local lines, selected_line, map_line, first_item_line, item_lines = dashboard_lines(exercises, state, selected, width, height, course_title)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
@@ -228,7 +229,8 @@ local function study_winbar(exercise, index, total, completed, status)
     state_group = "DiagnosticInfo"
   end
   return string.format(
-    "%%#Title#  RUST 100%%#Comment#  ·  %s / %s  ·  %%#Special#EJERCICIO %d DE %d%%#Comment#  ·  %%#%s#%s%%*",
+    "%%#Title#  %s%%#Comment#  ·  %s / %s  ·  %%#Special#EJERCICIO %d DE %d%%#Comment#  ·  %%#%s#%s%%*",
+    (exercise.course_title or "Rust 100"):upper(),
     exercise.chapter,
     exercise.name,
     index,
@@ -302,7 +304,7 @@ function M.lesson_buffer(buf, exercise, on_return)
     vim.wo[win].number = false
     vim.wo[win].relativenumber = false
     vim.wo[win].signcolumn = "no"
-    vim.wo[win].winbar = string.format("  RUST 100  ·  LECCIÓN  ·  %s / %s  ·  q volver al código", exercise.chapter, exercise.name)
+    vim.wo[win].winbar = string.format("  %s  ·  LECCIÓN  ·  %s / %s  ·  q volver al código", (exercise.course_title or "Rust 100"):upper(), exercise.chapter, exercise.name)
   end
   vim.keymap.set("n", "q", on_return, { buffer = buf, silent = true, desc = "Volver al ejercicio" })
   vim.keymap.set("n", "<leader>rm", on_return, { buffer = buf, silent = true, desc = "Volver al ejercicio" })
@@ -346,7 +348,7 @@ function M.close_check_output()
   output_full = false
 end
 
-function M.show_check_failure(output)
+function M.show_check_failure(output, course_title)
   M.close_check_output()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, "rust100://check/" .. buf)
@@ -388,7 +390,7 @@ function M.show_check_failure(output)
   vim.wo[output_window].linebreak = true
   vim.wo[output_window].number = false
   vim.wo[output_window].signcolumn = "no"
-  vim.wo[output_window].winbar = "  RUST 100  ·  COMPROBACIÓN FALLIDA  ·  d detalle  ·  q cerrar"
+  vim.wo[output_window].winbar = string.format("  %s  ·  COMPROBACIÓN FALLIDA  ·  d detalle  ·  q cerrar", (course_title or "Rust 100"):upper())
   vim.api.nvim_buf_add_highlight(buf, output_ns, "DiagnosticError", 0, 0, -1)
   vim.keymap.set("n", "d", function()
     output_full = not output_full

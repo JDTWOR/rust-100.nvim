@@ -150,7 +150,7 @@ local function open_buffers(ctx, index)
     output = function()
       local output = check_outputs[buf]
       if output then
-        ui.show_check_failure(output)
+        ui.show_check_failure(output, exercise.course_title)
       else
         notify("Todavía no hay un resultado de comprobación para este ejercicio.")
       end
@@ -301,13 +301,47 @@ local function show_check_error(result, request)
   ui.update_study(buf, exercise, index, #ctx.exercises, false, status)
   ui.refresh_dashboard(ctx.state)
   if not request.automatic then
-    ui.show_check_failure(output)
+    ui.show_check_failure(output, exercise.course_title)
     notify("La comprobación falló. El panel muestra el resumen; pulsa d para ver toda la salida.", vim.log.levels.WARN)
   end
 end
 
 local function run_check(request)
   local ctx, exercise, index = request.ctx, request.exercise, request.index
+  local function handle_result(result)
+    if request_is_stale(request) then
+      discard_stale_check(request)
+      return
+    end
+    if result.code ~= 0 then
+      show_check_error(result, request)
+      finish_check(request)
+      return
+    end
+
+    local was_completed = ctx.state.completed[exercise.id] == true
+    ctx.state.completed[exercise.id] = true
+    save(ctx)
+    local buf = request.buf or vim.fn.bufnr(exercise.source)
+    if buf > 0 then
+      check_outputs[buf] = nil
+    end
+    ui.close_check_output()
+    ui.update_study(buf, exercise, index, #ctx.exercises, true, "✓ RESUELTO · <leader>rn")
+    ui.refresh_dashboard(ctx.state)
+    if not request.automatic then
+      notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
+    elseif not was_completed then
+      notify("✓ Ejercicio " .. tostring(index) .. " de " .. tostring(#ctx.exercises) .. " resuelto. <leader>rn para continuar.", vim.log.levels.INFO)
+    end
+    finish_check(request)
+  end
+
+  if exercise.check_command then
+    run_system(exercise.check_command, exercise.dir, handle_result)
+    return
+  end
+
   register_exercise(ctx, exercise, function(open_result)
     if request_is_stale(request) then
       discard_stale_check(request)
@@ -318,35 +352,7 @@ local function run_check(request)
       finish_check(request)
       return
     end
-
-    run_system({ "wr", "check" }, exercise.dir, function(result)
-      if request_is_stale(request) then
-        discard_stale_check(request)
-        return
-      end
-      if result.code ~= 0 then
-        show_check_error(result, request)
-        finish_check(request)
-        return
-      end
-
-      local was_completed = ctx.state.completed[exercise.id] == true
-      ctx.state.completed[exercise.id] = true
-      save(ctx)
-      local buf = request.buf or vim.fn.bufnr(exercise.source)
-      if buf > 0 then
-        check_outputs[buf] = nil
-      end
-      ui.close_check_output()
-      ui.update_study(buf, exercise, index, #ctx.exercises, true, "✓ RESUELTO · <leader>rn")
-      ui.refresh_dashboard(ctx.state)
-      if not request.automatic then
-        notify("Resuelto. Usa <leader>rn cuando quieras seguir.", vim.log.levels.INFO)
-      elseif not was_completed then
-        notify("✓ Ejercicio " .. tostring(index) .. " de " .. tostring(#ctx.exercises) .. " resuelto. <leader>rn para continuar.", vim.log.levels.INFO)
-      end
-      finish_check(request)
-    end)
+    run_system({ "wr", "check" }, exercise.dir, handle_result)
   end)
 end
 
@@ -358,6 +364,11 @@ start_check = function(request)
   end
   if not request.automatic then
     notify("Comprobando " .. exercise.chapter .. "/" .. exercise.name .. "…")
+  end
+
+  if exercise.check_command then
+    run_check(request)
+    return
   end
 
   bootstrap.ensure_runner(config, function(ready, err)
@@ -485,32 +496,40 @@ function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
 end
 
-function M.health()
-  local lines = { "Estado de Rust 100" }
+function M.health(health_config)
+  health_config = health_config or config
+  local root, target = bootstrap.course_target(health_config)
+  local exercises = root and course.load(root) or nil
+  local course_title = exercises and exercises[1] and exercises[1].course_title or "Rust 100"
+  local lines = { "Estado de " .. course_title }
   for _, command in ipairs({ "git", "cargo", "rustc" }) do
     local status = vim.fn.executable(command) == 1 and "disponible" or "falta"
     lines[#lines + 1] = string.format("%s: %s", command, status)
   end
-  local runner_status
-  if bootstrap.runner_available() then
-    runner_status = "disponible"
-  elseif config.auto_setup and vim.fn.executable("cargo") == 1 and vim.fn.executable("rustc") == 1 then
-    runner_status = "se instalará automáticamente"
+  local custom_runner = exercises and exercises[1] and exercises[1].runner == "command"
+  if custom_runner then
+    lines[#lines + 1] = "runner: comando definido por el curso"
   else
-    runner_status = "falta"
+    local runner_status
+    if bootstrap.runner_available() then
+      runner_status = "disponible"
+    elseif health_config.auto_setup and vim.fn.executable("cargo") == 1 and vim.fn.executable("rustc") == 1 then
+      runner_status = "se instalará automáticamente"
+    else
+      runner_status = "falta"
+    end
+    lines[#lines + 1] = string.format("wr: %s", runner_status)
   end
-  lines[#lines + 1] = string.format("wr: %s", runner_status)
   lines[#lines + 1] = string.format("rust-analyzer: %s (opcional)", vim.fn.executable("rust-analyzer") == 1 and "disponible" or "falta")
 
-  local root, target = bootstrap.course_target(config)
   if root then
     lines[#lines + 1] = "curso: " .. root
-  elseif config.auto_setup then
+  elseif health_config.auto_setup then
     lines[#lines + 1] = "curso: se descargará en " .. target
   else
     lines[#lines + 1] = "curso: no encontrado"
   end
-  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Rust 100" })
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = course_title })
 end
 
 local function dispatch(ctx, args)
@@ -533,11 +552,11 @@ local function dispatch(ctx, args)
   end
 end
 
-function M.command(args)
+local function command(args, command_config)
   args = args or {}
   local action = args[1] or "dashboard"
   if action == "health" then
-    M.health()
+    M.health(command_config)
     return
   end
 
@@ -547,7 +566,7 @@ function M.command(args)
     return
   end
 
-  bootstrap.ensure_course(config, function(root, setup_error)
+  bootstrap.ensure_course(command_config, function(root, setup_error)
     if not root then
       notify(setup_error, vim.log.levels.ERROR)
       return
@@ -559,8 +578,8 @@ function M.command(args)
       return
     end
 
-    if action ~= "check" then
-      bootstrap.ensure_runner(config, function(ready, runner_error)
+    if action ~= "check" and ctx.exercises[1].runner ~= "command" then
+      bootstrap.ensure_runner(command_config, function(ready, runner_error)
         if not ready then
           notify(runner_error, vim.log.levels.WARN)
         end
@@ -569,6 +588,18 @@ function M.command(args)
 
     dispatch(ctx, args)
   end)
+end
+
+function M.command(args)
+  command(args, config)
+end
+
+function M.backend_command(args)
+  local backend_config = vim.tbl_deep_extend("force", config, {
+    course_root = config.backend_course_root or vim.fs.joinpath(vim.fn.stdpath("data"), "rust100", "backend-course"),
+    auto_setup = false,
+  })
+  command(args, backend_config)
 end
 
 function M.complete(arglead)

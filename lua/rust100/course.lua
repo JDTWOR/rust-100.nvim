@@ -23,10 +23,11 @@ local function is_directory(path)
 end
 
 local function is_course_root(path)
-  return stat(join(path, ".wr.toml")) ~= nil
+  local rust_100 = stat(join(path, ".wr.toml")) ~= nil
     and stat(join(path, ".git")) ~= nil
     and is_directory(join(path, "exercises"))
     and stat(join(path, "book", "src", "SUMMARY.md")) ~= nil
+  return rust_100 or stat(join(path, "course.json")) ~= nil
 end
 
 function M.normalize(path)
@@ -98,12 +99,14 @@ end
 
 function M.todo_markers(exercise)
   local markers = {}
-  for _, file in ipairs(rust_files(join(exercise.dir, "src"))) do
+  for _, file in ipairs(rust_files(exercise.source_dir or join(exercise.dir, "src"))) do
     local ok, lines = pcall(vim.fn.readfile, file)
     if ok then
       for line_number, line in ipairs(lines) do
         local kind
-        if line:find("todo!(", 1, true) then
+        if exercise.todo_tag and not line:find(exercise.todo_tag, 1, true) then
+          kind = nil
+        elseif line:find("todo!(", 1, true) then
           kind = "todo!"
         elseif line:find("TODO", 1, true) then
           kind = "TODO"
@@ -144,6 +147,7 @@ function M.task_summary(markers)
   for _, marker in ipairs(markers or {}) do
     if marker.kind == "TODO" then
       local summary = marker.text:gsub("^%s*//%s*", ""):gsub("TODO:?%s*", "")
+      summary = summary:gsub("^%[[^%]]+%]%s*:?%s*", "")
       summary = vim.trim(summary)
       if summary ~= "" then
         return summary
@@ -156,7 +160,74 @@ function M.task_summary(markers)
   return "Lee la lección y completa el ejercicio."
 end
 
+local function load_manifest(root)
+  local manifest_path = join(root, "course.json")
+  local ok, contents = pcall(vim.fn.readfile, manifest_path)
+  if not ok then
+    return nil, "Could not read course manifest at " .. manifest_path
+  end
+  local decoded, manifest = pcall(vim.json.decode, table.concat(contents, "\n"))
+  if not decoded or type(manifest) ~= "table" or type(manifest.exercises) ~= "table" then
+    return nil, "Invalid course manifest at " .. manifest_path
+  end
+
+  local exercises = {}
+  for _, item in ipairs(manifest.exercises) do
+    if type(item) ~= "table"
+      or type(item.id) ~= "string"
+      or type(item.title) ~= "string"
+      or type(item.lesson) ~= "string"
+      or type(item.source) ~= "string"
+    then
+      return nil, "Every course exercise needs id, title, lesson, and source fields."
+    end
+    local exercise = {
+      id = item.id,
+      chapter = item.chapter or "Backend",
+      name = item.name or item.id,
+      title = item.title,
+      lesson = normalize(join(root, item.lesson)),
+      source = normalize(join(root, item.source)),
+      source_dir = normalize(join(root, item.source_dir or vim.fs.dirname(item.source))),
+      dir = normalize(join(root, item.working_dir or ".")),
+      runner = item.runner or manifest.runner or "wr",
+      check_command = item.check_command,
+      todo_tag = item.todo_tag,
+      course_title = manifest.title or "Rust Lab",
+    }
+    if exercise.runner == "command" then
+      if type(exercise.check_command) ~= "table" or #exercise.check_command == 0 then
+        return nil, "Exercise '" .. item.id .. "' needs a non-empty check_command array."
+      end
+      for _, argument in ipairs(exercise.check_command) do
+        if type(argument) ~= "string" then
+          return nil, "Exercise '" .. item.id .. "' has a non-string check_command argument."
+        end
+      end
+    elseif exercise.runner ~= "wr" then
+      return nil, "Exercise '" .. item.id .. "' has an unsupported runner: " .. tostring(exercise.runner)
+    end
+    if stat(exercise.lesson) and stat(exercise.source) then
+      exercise.markers = M.todo_markers(exercise)
+      exercise.task = M.task_summary(exercise.markers)
+      exercise.focus_line = M.focus_line(exercise, exercise.markers)
+      exercises[#exercises + 1] = exercise
+    else
+      return nil, "Exercise '" .. item.id .. "' points to a missing lesson or source file."
+    end
+  end
+
+  if #exercises == 0 then
+    return nil, "No exercises were found in " .. manifest_path
+  end
+  return exercises
+end
+
 function M.load(root)
+  if stat(join(root, "course.json")) then
+    return load_manifest(root)
+  end
+
   local summary_path = join(root, "book", "src", "SUMMARY.md")
   if not stat(summary_path) then
     return nil, "The course index was not found at " .. summary_path
@@ -212,16 +283,26 @@ function M.index_for_path(exercises, path)
 
   path = normalize(path)
   local separator = package.config:sub(1, 1)
+  local match
 
   for index, exercise in ipairs(exercises) do
-    local exercise_dir = normalize(exercise.dir)
-    local prefix = exercise_dir .. separator
-    if path == normalize(exercise.lesson) or path == exercise_dir or path:sub(1, #prefix) == prefix then
-      return index
+    if exercise.runner == "command" then
+      if path == normalize(exercise.lesson) or path == normalize(exercise.source) then
+        if match then
+          return nil
+        end
+        match = index
+      end
+    else
+      local exercise_dir = normalize(exercise.dir)
+      local prefix = exercise_dir .. separator
+      if path == normalize(exercise.lesson) or path == exercise_dir or path:sub(1, #prefix) == prefix then
+        return index
+      end
     end
   end
 
-  return nil
+  return match
 end
 
 return M
