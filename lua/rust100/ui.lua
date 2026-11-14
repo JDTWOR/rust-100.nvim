@@ -308,27 +308,18 @@ function M.show_check_failure(output)
   if #lines == 0 then
     lines = { "El verificador terminó sin devolver detalles." }
   end
-  table.insert(lines, 1, "RUST 100 · NO PASÓ · salida completa de wr · q cerrar")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  local width = math.max(1, math.min(vim.o.columns - 4, 112))
-  local height = math.max(1, math.min(#lines, 18, vim.o.lines - 2))
-  output_window = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = math.max(0, vim.o.lines - height - 3),
-    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-  })
+  local height = math.max(1, math.min(math.max(#lines, 5), 14, vim.o.lines - 5))
+  vim.cmd("botright " .. height .. "split")
+  output_window = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(output_window, buf)
   vim.wo[output_window].wrap = true
   vim.wo[output_window].linebreak = true
   vim.wo[output_window].number = false
   vim.wo[output_window].signcolumn = "no"
-  vim.wo[output_window].winbar = "  RUST 100  ·  RESULTADO  ·  q volver"
-  vim.wo[output_window].winhl = "Normal:NormalFloat,FloatBorder:DiagnosticError"
+  vim.wo[output_window].winbar = "  RUST 100  ·  COMPROBACIÓN FALLIDA  ·  q cerrar"
   vim.api.nvim_buf_add_highlight(buf, output_ns, "DiagnosticError", 0, 0, -1)
   vim.keymap.set("n", "q", function()
     close_window(output_window)

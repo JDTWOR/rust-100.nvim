@@ -35,7 +35,7 @@ La cantidad total se calcula desde el índice del curso, no se fija en `100`, po
 - El winbar muestra ejercicio, avance y acciones disponibles.
 - La lección Markdown abre en una vista de lectura con ajuste de línea y vuelve al código con `q`.
 - Guardar el código verifica el ejercicio automáticamente; se puede desactivar en la configuración.
-- Si falla, la salida completa se abre en una ventana legible; `q` vuelve al código.
+- Si falla, la salida completa se abre en una división inferior y el código queda visible; `q` cierra el resultado.
 - Si pasa, el panel marca el ejercicio como resuelto y el usuario elige cuándo avanzar.
 
 ## Estados
